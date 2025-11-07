@@ -4,6 +4,7 @@ import {
   listCustomers,
   getCustomer,
   setCustomerRole,
+  resetCustomerPassword,
   Customer,
 } from "../../../services/customers.service";
 import { fmtEGP } from "../../../lib/money";
@@ -335,6 +336,13 @@ export function CustomersManagement() {
                           </span>
                         </div>
                       )}
+                      {(isAdmin || isStaff) && (
+                        <div className="pt-2">
+                          <Button variant="outline" onClick={() => setResetOpen(true)}>
+                            {t("resetPassword", "Reset Password")}
+                          </Button>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
@@ -427,6 +435,67 @@ export function CustomersManagement() {
               </TabsContent>
             </Tabs>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password Modal */}
+      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+        <DialogContent className="max-w-md" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>{t("resetPassword", "Reset Password")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm mb-1">{t("newPassword", "New Password")}</label>
+              <Input
+                type="password"
+                value={pwd}
+                onChange={(e) => setPwd(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-sm mb-1">{t("confirm_password", "Confirm Password")}</label>
+              <Input
+                type="password"
+                value={pwd2}
+                onChange={(e) => setPwd2(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                className="flex-1"
+                disabled={pwdLoading || !selected}
+                onClick={async () => {
+                  if (!selected) return;
+                  if ((pwd || "").length < 6) {
+                    toast.error(t("passwordTooShort", "Password must be at least 6 characters"));
+                    return;
+                  }
+                  if (pwd !== pwd2) {
+                    toast.error(t("passwordMismatch", "Passwords do not match"));
+                    return;
+                  }
+                  try {
+                    setPwdLoading(true);
+                    await resetCustomerPassword(selected.id, pwd);
+                    toast.success(t("passwordUpdated", "Password updated"));
+                    setPwd("");
+                    setPwd2("");
+                    setResetOpen(false);
+                  } catch (e: any) {
+                    toast.error(String(e?.response?.data?.message || e?.message || "Failed to reset password"));
+                  } finally {
+                    setPwdLoading(false);
+                  }
+                }}
+              >
+                {pwdLoading ? t("app.loading", "Loading...") : (t("resetPassword", "Reset Password"))}
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => setResetOpen(false)} disabled={pwdLoading}>
+                {t("app.actions.cancel", "Cancel")}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -536,7 +536,14 @@ export function SettingsManagement() {
                         type="number"
                         value={payment.cashOnDelivery?.maxAmount ?? 0}
                         onChange={(e) => {
-                          setPayment((p) => ({ ...p, cashOnDelivery: { ...(p.cashOnDelivery || {}), maxAmount: parseFloat(e.target.value || "0") } }));
+                          const val = parseFloat(e.target.value || "0");
+                          setPayment((p) => ({
+                            ...p,
+                            cashOnDelivery: {
+                              enabled: !!p.cashOnDelivery?.enabled,
+                              maxAmount: val,
+                            },
+                          }));
                           markDirty();
                         }}
                         className="w-24"
@@ -572,7 +579,13 @@ export function SettingsManagement() {
                             className="cursor-pointer"
                             onClick={() => {
                               const next = active ? current.filter((c) => c !== card) : [...current, card];
-                              setPayment((p) => ({ ...p, creditCards: { ...(p.creditCards || {}), acceptedCards: next } }));
+                              setPayment((p) => ({
+                                ...p,
+                                creditCards: {
+                                  enabled: !!p.creditCards?.enabled,
+                                  acceptedCards: next,
+                                },
+                              }));
                               markDirty();
                             }}
                           >
