@@ -41,6 +41,7 @@ import { SettingsManagement } from "./screens/SettingsManagement";
 import { CouponsManagement } from "./screens/CouponsManagement";
 import { HotOffersList } from "./screens/HotOffers";
 import { useTranslation } from "react-i18next";
+import BrandLogo from "../common/BrandLogo";
 import { fetchDashboard, type DashboardSummary } from "../../services/dashboard.service";
 import { useAuth } from "../../auth/AuthProvider";
 
@@ -172,7 +173,7 @@ export function AdminDashboard() {
           } space-x-3`}
         >
           <div className="w-10 h-10 rounded-xl overflow-hidden bg-primary/10 flex items-center justify-center shadow-sm">
-            <img src="/src/assets/1.png" alt="Logo" className="w-9 h-9 object-contain" />
+            <BrandLogo size={36} />
           </div>
           <div>
             <h1 className="font-poppins text-xl text-foreground font-semibold">

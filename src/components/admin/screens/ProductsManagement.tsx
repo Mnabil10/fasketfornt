@@ -317,7 +317,6 @@ export function ProductsManagement(props?: any) {
       isHotOffer: !!p.isHotOffer,
     });
     setError(null);
-    setEditTab("basic");
     setIsEditModalOpen(true);
   }
 

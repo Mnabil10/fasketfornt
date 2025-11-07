@@ -9,6 +9,7 @@ import { adminLogin } from "../../services/auth.service";
 import { useAuth } from "../../auth/AuthProvider";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ShoppingCartIcon } from "lucide-react";
+import BrandLogo from "../common/BrandLogo";
 
 // 1) Helpers: trim + إزالة مسافات خفية + تحويل أرقام عربية/فارسي إلى لاتيني
 function normalizeDigits(s: string) {
@@ -97,9 +98,8 @@ export default function SignIn() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
           <div className="flex items-center justify-center mb-6">
-            <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center text-white relative">
-              <span className="text-lg font-bold">F</span>
-              <ShoppingCartIcon className="absolute -top-1 -right-1 w-4 h-4 text-white" />
+            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+              <BrandLogo size={42} />
             </div>
           </div>
 
