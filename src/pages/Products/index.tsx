@@ -1,0 +1,1 @@
+export { ProductsManagement as default } from '../../components/admin/screens/ProductsManagement'

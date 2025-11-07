@@ -1,0 +1,1 @@
+export { CategoriesManagement as default } from '../../components/admin/screens/CategoriesManagement'

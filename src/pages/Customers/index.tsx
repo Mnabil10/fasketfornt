@@ -1,0 +1,1 @@
+export { CustomersManagement as default } from '../../components/admin/screens/CustomersManagement'

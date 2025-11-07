@@ -1,0 +1,369 @@
+{
+  "app": {
+    "title": "Fasket Admin Dashboard",
+    "loading": "Loading...",
+    "actions": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "edit": "Edit",
+      "add": "Add",
+      "create": "Create",
+      "search": "Search",
+      "refresh": "Refresh",
+      "view": "View",
+      "next": "Next",
+      "prev": "Previous",
+      "toggle": "Enable/Disable",
+      "updateStatus": "Update Status",
+      "upload": "Upload",
+      "close": "Close",
+      "apply": "Apply",
+      "reset": "Reset",
+      "title": "Actions",
+      "actions": "Actions",
+      "update": "Update"
+    },
+    "table": {
+      "noData": "No data available",
+      "page": "Page",
+      "of": "of",
+      "rows": "rows",
+      "total": "Total"
+    },
+    "money": {
+      "egp": "EGP"
+    },
+    "notifications": {
+      "saved": "Saved successfully",
+      "deleted": "Deleted successfully",
+      "updated": "Updated successfully",
+      "error": "An error occurred"
+    },
+    "yes": "Yes",
+    "no": "No",
+    "active": "Active",
+    "inactive": "Inactive"
+  },
+
+  "nav": {
+    "dashboard": "Dashboard",
+    "categories": "Categories",
+    "products": "Products",
+    "orders": "Orders",
+    "customers": "Customers",
+    "settings": "Settings",
+    "logout": "Logout"
+  },
+
+  "filters": {
+    "searchPlaceholder": "Search by name or number...",
+    "status": "Status",
+    "from": "From Date",
+    "to": "To Date",
+    "category": "Category",
+    "inStock": "In Stock",
+    "minPrice": "Min Price (Cents)",
+    "maxPrice": "Max Price (Cents)"
+  },
+
+  "dashboard": {
+    "revenue": "Revenue",
+    "orders": "Orders",
+    "avgOrder": "Average Order Value",
+    "customers": "Customers",
+    "recentOrders": "Recent Orders",
+    "statusBreakdown": "Status Breakdown",
+    "topProducts": "Top Selling Products",
+    "lowStock": "Low Stock",
+    "timeseriesTitle": "Sales by Period",
+    "orderId": "Order ID",
+    "customer": "Customer",
+    "total": "Total",
+    "createdAt": "Created At",
+    "status": "Status",
+    "salesOverview": "Daily Sales Overview",
+    "sold": "Sold",
+    "metrics": "Performance Metrics",
+    "last30d": "Last 30 Days"
+  },
+
+  "categories": {
+    "title": "Categories",
+    "subtitle": "Organize your products into categories",
+    "titleList": "Category List",
+    "image": "Image",
+    "name": "Name",
+    "slug": "Slug",
+    "active": "Active",
+    "imageUrl": "Image URL",
+    "sortOrder": "Sort Order",
+    "parent": "Parent Category",
+    "root": "Root Category",
+    "addNew": "Add Category",
+    "editCategory": "Edit Category",
+    "deleteTitle": "Delete Category",
+    "deleteConfirm": "Are you sure you want to delete this category?",
+    "created": "Category created",
+    "updated": "Category updated",
+    "deleted": "Category deleted",
+    "manage": "Manage Categories",
+    "nameAr": "Arabic Name"
+  },
+
+  "products": {
+    "title": "Products",
+    "subtitle": "Manage your product catalog",
+    "name": "Name",
+    "slug": "Slug",
+    "description": "Description",
+    "imageUrl": "Main Image",
+    "images": "Additional Images",
+    "nameAr": "Arabic Name",
+    "descriptionAr": "Arabic Description",
+    "isHotOffer": "Hot Offer",
+    "hotOffers": "Hot Offers",
+    "hotOffersSubtitle": "Products marked as hot offers",
+    "price": "Price (EGP)",
+    "salePrice": "Sale Price (EGP)",
+    "stock": "Stock",
+    "status": "Status",
+    "category": "Category",
+    "addNew": "Add Product",
+    "editProduct": "Edit Product",
+    "deleted": "Product deleted",
+    "created": "Product created",
+    "updated": "Product updated",
+    "discount": "Discount",
+    "off": "off",
+    "invalid_slug": "Invalid slug format",
+    "invalid_price": "Invalid price",
+    "invalid_sale_price": "Invalid sale price",
+    "invalid_stock": "Invalid stock",
+    "upload": {
+      "bad_type": "Unsupported file type",
+      "too_large": "File too large"
+    },
+    "form": {
+      "basic": "Basic Info",
+      "pricing": "Pricing",
+      "inventory": "Inventory",
+      "media": "Media"
+    },
+    "stats": {
+      "total": "Total Products",
+      "active": "Active Products",
+      "low": "Low Stock",
+      "out": "Out of Stock"
+    },
+    "stockStatuses": {
+      "out": "Out of Stock",
+      "low": "Low Stock",
+      "in": "In Stock"
+    },
+    "statuses": {
+      "DRAFT": "Draft",
+      "ACTIVE": "Active",
+      "HIDDEN": "Hidden",
+      "DISCONTINUED": "Discontinued"
+    },
+    "performance": "Performance",
+    "id": "ID",
+    "units": "Units",
+    "delete": "Delete Product",
+    "deleteConfirm": "Are you sure you want to delete this product? This action cannot be undone.",
+   
+    "trend": {
+      "good": "Good",
+      "low": "Low"
+    },
+    
+    "media": {
+      "hint": "Paste image URLs above (preview uses the main image)"
+    },
+    
+    "add": "Add Product"
+  },
+
+  "orders": {
+    "title": "Orders",
+    "subtitle": "Track and manage customer orders",
+    "status": "Status",
+    "from": "From",
+    "to": "To",
+    "customer": "Customer",
+    "minTotal": "Min Total (Cents)",
+    "maxTotal": "Max Total (Cents)",
+    "detail": "Order Details",
+    "subtotal": "Subtotal",
+    "shipping": "Shipping",
+    "discount": "Discount",
+    "total": "Total",
+    "address": "Address",
+    "items": "Items",
+    "qty": "Qty",
+    "price": "Price",
+    "history": "Status History",
+    "coupon": "Coupon",
+    "cartId": "Cart ID",
+    "notes": "Notes",
+    "updateStatus": "Update Order Status",
+    "note": "Note",
+    "actorId": "Employee ID (optional)",
+    "updated": "Order status updated",
+    "payment": "Payment",
+    "each": "Each",
+    "totalOnPage": "Orders (This Page)",
+    "revenueOnPage": "Revenue (This Page)",
+    "listTitle": "Orders ({{count}})",
+    "notePlaceholder": "Add a note (optional)...",
+    "noteHint": "Hint: Press Ctrl+Enter to save note with current status",
+    "statuses": {
+      "PENDING": "Pending",
+      "PROCESSING": "Processing",
+      "OUT_FOR_DELIVERY": "Out for Delivery",
+      "DELIVERED": "Delivered",
+      "CANCELED": "Canceled"
+    },
+    "viewAll": "View All Orders"
+  },
+
+  "coupons": {
+    "title": "Coupons",
+    "subtitle": "Create and manage discount coupons",
+    "addNew": "New Coupon",
+    "created": "Coupon created",
+    "updated": "Coupon updated",
+    "code_required": "Code is required",
+    "code": "Code",
+    "type": "Type",
+    "percent": "Percent",
+    "fixed": "FIXED",
+    "value": "Value (cents)",
+    "active": "Active",
+    "startsAt": "Starts At (ISO)",
+    "endsAt": "Ends At (ISO)",
+    "minOrderCents": "Min Order (cents)",
+    "maxDiscountCents": "Max Discount (cents)",
+    "searchPlaceholder": "Search code"
+  },
+
+  "customers": {
+    "title": "Customers",
+    "name": "Name",
+    "phone": "Phone",
+    "email": "Email",
+    "createdAt": "Created At",
+    "addresses": "Addresses",
+    "orders": "Orders",
+    "resetPassword": "Reset Password",
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm Password",
+    "passwordTooShort": "Password must be at least 6 characters",
+    "passwordMismatch": "Passwords do not match",
+    "passwordUpdated": "Password updated"
+  },
+
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "delivery": "Delivery",
+    "payment": "Payment",
+    "notifications": "Notifications",
+    "system": "System",
+    "generalFields": {
+      "storeName": "Store Name",
+      "storeDescription": "Store Description",
+      "contactEmail": "Contact Email",
+      "contactPhone": "Contact Phone",
+      "storeAddress": "Store Address",
+      "businessHours": "Business Hours "
+    },
+    "deliveryFields": {
+      "deliveryFee": "Delivery Fee",
+      "freeDeliveryMinimum": "Free Delivery Minimum",
+      "estimatedDeliveryTime": "Estimated Delivery Time",
+      "maxDeliveryRadius": "Max Delivery Radius (km)",
+      "deliveryZones": "Delivery Zones "
+    },
+    "paymentFields": {
+      "cashOnDelivery": "Cash on Delivery ",
+      "creditCards": "Credit Cards ",
+      "digitalWallets": "Digital Wallets ",
+      "stripe": "Stripe "
+    },
+    "notificationsFields": {
+      "orderNotifications": "Order Notifications ",
+      "marketingEmails": "Marketing Emails ",
+      "adminAlerts": "Admin Alerts "
+    },
+    "systemFields": {
+      "maintenanceMode": "Maintenance Mode",
+      "allowRegistrations": "Allow Registrations",
+      "requireEmailVerification": "Require Email Verification",
+      "sessionTimeout": "Session Timeout (minutes)",
+      "maxLoginAttempts": "Max Login Attempts",
+      "dataRetentionDays": "Data Retention (days)",
+      "backupFrequency": "Backup Frequency",
+      "timezone": "Timezone",
+      "language": "Language",
+      "currency": "Currency"
+    },
+    "saveGeneral": "Save (General)",
+    "saveDelivery": "Save (Delivery)",
+    "savePayment": "Save (Payment)",
+    "saveNotifications": "Save (Notifications)",
+    "saveSystem": "Save (System)"
+  },
+
+  "menu": {
+    "dashboard": "Dashboard",
+    "categories": "Categories",
+    "products": "Products",
+    "hot-offers": "Hot Offers",
+    "orders": "Orders",
+    "customers": "Customers",
+    "coupons": "Coupons",
+    "settings": "Settings"
+  },
+
+  "common": {
+    "app_name": "Fasket",
+    "admin_panel": "Admin Panel",
+    "search_placeholder": "Search here...",
+    "admin_user": "System Admin",
+    "admin_email": "admin@fasket.com",
+    "profile": "Profile",
+    "logout": "Logout",
+    "new_order": "New Order",
+    "order_from": "Order #{{id}} from {{name}}",
+    "time_ago": "{{time}} ago",
+    "low_stock": "Low Stock",
+    "low_stock_msg": "Product {{product}} is running low ({{count}} left)",
+    "out_of_stock": "Out of Stock",
+    "out_of_stock_msg": "Product {{product}} is currently unavailable",
+    "viewDetails": "View Details",
+    "viewAll": "View All",
+    "all": "All",
+    "actions": "Actions"
+  },
+
+  "auth": {
+    "sign_in_title": "Sign in to Fasket Dashboard",
+    "sign_in_subtitle": "Use your phone number and password to log in.",
+    "phone": "Phone Number",
+    "phone_placeholder": "Example: 01012345678",
+    "password": "Password",
+    "sign_in_btn": "Sign In",
+    "signing_in": "Signing in...",
+    "invalid_phone": "Please enter a valid phone number",
+    "invalid_password": "Password must be at least 4 characters",
+    "login_failed": "Login failed. Check your phone and password.",
+    "footer_note": "Need access? Contact your administrator.",
+    "forbidden_title": "Access Denied",
+    "forbidden_desc": "Your account does not have admin privileges. Please sign in with an ADMIN account.",
+    "back_to_login": "Back to Login",
+    "logout": "Logout",
+    "not_admin": "This account is not an admin. Please use an ADMIN account."
+  }
+}

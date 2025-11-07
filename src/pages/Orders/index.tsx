@@ -1,0 +1,1 @@
+export { OrdersManagement as default } from '../../components/admin/screens/OrdersManagement'

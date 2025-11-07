@@ -1,0 +1,1 @@
+export { SettingsManagement as default } from '../../components/admin/screens/SettingsManagement'

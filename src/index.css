@@ -1,0 +1,147 @@
+/* src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Light tokens (your exact values) */
+:root {
+  --font-size: 16px;
+
+  /* Fasket Brand */
+  --fasket-red: #E53935;
+  --fasket-dark-gray: #2D2D2D;
+  --fasket-background: #F5F5F5;
+
+  --background: #F5F5F5;
+  --foreground: #2D2D2D;
+
+  --card: #ffffff;
+  --card-foreground: #2D2D2D;
+  --popover: #ffffff;
+  --popover-foreground: #2D2D2D;
+
+  --primary: #E53935;
+  --primary-foreground: #ffffff;
+
+  --secondary: #F5F5F5;
+  --secondary-foreground: #2D2D2D;
+
+  --muted: #F0F0F0;
+  --muted-foreground: #757575;
+
+  --accent: #FFF3F3;
+  --accent-foreground: #E53935;
+
+  --destructive: #E53935;
+  --destructive-foreground: #ffffff;
+
+  --border: rgba(45, 45, 45, 0.1);
+  --input: transparent;
+  --input-background: #ffffff;
+  --switch-background: #E0E0E0;
+
+  --ring: #E53935;
+
+  /* charts */
+  --chart-1: #E53935;
+  --chart-2: #FF7043;
+  --chart-3: #66BB6A;
+  --chart-4: #42A5F5;
+  --chart-5: #AB47BC;
+
+  --radius: 0.5rem;
+
+  /* sidebar */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #2D2D2D;
+  --sidebar-primary: #E53935;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #FFF3F3;
+  --sidebar-accent-foreground: #E53935;
+  --sidebar-border: rgba(45, 45, 45, 0.1);
+  --sidebar-ring: #E53935;
+}
+
+/* Dark tokens (as you provided) */
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+
+  --card: oklch(0.145 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.145 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+
+  --destructive: oklch(0.396 0.141 25.723);
+  --destructive-foreground: oklch(0.637 0.237 25.331);
+
+  --border: oklch(0.269 0 0);
+  --input: oklch(0.269 0 0);
+  --ring: oklch(0.439 0 0);
+
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.269 0 0);
+  --sidebar-ring: oklch(0.439 0 0);
+}
+
+@layer base {
+  /* avoid Tailwind error: set border color directly, not @apply border-border */
+  *, ::before, ::after { border-color: var(--border); }
+
+  body { @apply bg-background text-foreground; }
+  html { font-size: var(--font-size); }
+
+  /* Typography */
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  }
+  .font-poppins {
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  }
+
+  /* Default heading/body scale unless overridden by Tailwind text-* classes */
+  :where(:not(:has([class*=" text-"]), :not(:has([class^="text-"])))) {
+    h1 { font-family: 'Poppins', sans-serif; font-size: var(--text-2xl); font-weight: 700; line-height: 1.4; }
+    h2 { font-family: 'Poppins', sans-serif; font-size: var(--text-xl);  font-weight: 600; line-height: 1.4; }
+    h3 { font-family: 'Poppins', sans-serif; font-size: var(--text-lg);  font-weight: 600; line-height: 1.4; }
+    h4 { font-family: 'Poppins', sans-serif; font-size: var(--text-base);font-weight: 600; line-height: 1.4; }
+    p  { font-family: 'Inter',   sans-serif; font-size: var(--text-base);font-weight: 400; line-height: 1.5; }
+    label, button, input { font-family: 'Inter', sans-serif; font-size: var(--text-base); }
+  }
+}
+
+/* Example primitive that matches your cards */
+@layer components {
+  .card {
+    background-color: var(--card);
+    color: var(--card-foreground);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    box-shadow: 0 6px 24px rgba(0,0,0,.12);
+  }
+}

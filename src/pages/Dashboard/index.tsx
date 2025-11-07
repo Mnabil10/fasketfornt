@@ -1,0 +1,1 @@
+export { DashboardOverview as default } from '../../components/admin/screens/DashboardOverview'

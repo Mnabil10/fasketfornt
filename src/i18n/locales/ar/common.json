@@ -1,0 +1,123 @@
+{
+  "appTitle": "لوحة فاسكت",
+  "nav": {
+    "dashboard": "لوحة التحكم",
+    "products": "المنتجات",
+    "categories": "التصنيفات",
+    "orders": "الطلبات",
+    "customers": "العملاء",
+    "settings": "الإعدادات",
+    "logout": "تسجيل الخروج"
+  },
+  "actions": {
+    "add": "إضافة",
+    "edit": "تعديل",
+    "delete": "حذف",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "search": "بحث",
+    "filter": "تصفية",
+    "export": "تصدير",
+    "import": "استيراد",
+    "publish": "نشر",
+    "unpublish": "إلغاء النشر",
+    "create": "إنشاء",
+    "update": "تحديث"
+  },
+  "products": {
+    "title": "المنتجات",
+    "name": "الاسم",
+    "sku": "رمز المنتج",
+    "price": "السعر",
+    "stock": "المخزون",
+    "category": "التصنيف",
+    "status": "الحالة",
+    "active": "مفعل",
+    "inactive": "غير مفعل",
+    "create": "إنشاء منتج",
+    "update": "تحديث المنتج",
+    "images": "الصور",
+    "description": "الوصف"
+  },
+  "categories": {
+    "title": "التصنيفات",
+    "name": "الاسم",
+    "parent": "التصنيف الأب",
+    "create": "إنشاء تصنيف",
+    "update": "تحديث التصنيف"
+  },
+  "orders": {
+    "title": "الطلبات",
+    "id": "رقم الطلب",
+    "customer": "العميل",
+    "amount": "المبلغ",
+    "status": "الحالة",
+    "createdAt": "تاريخ الإنشاء",
+    "paid": "مدفوع",
+    "pending": "قيد الانتظار",
+    "cancelled": "ملغي",
+    "processing": "جار المعالجة",
+    "shipped": "تم الشحن",
+    "delivered": "تم التسليم",
+    "refunded": "مردود"
+  },
+  "customers": {
+    "title": "العملاء",
+    "name": "الاسم",
+    "email": "البريد الإلكتروني",
+    "phone": "الهاتف",
+    "address": "العنوان",
+    "orders": "الطلبات"
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "store": "المتجر",
+    "payments": "المدفوعات",
+    "shipping": "الشحن",
+    "tax": "الضريبة",
+    "notifications": "الإشعارات",
+    "language": "اللغة",
+    "arabic": "العربية",
+    "english": "الإنجليزية"
+  },
+  "table": {
+    "empty": "لا توجد بيانات",
+    "total": "الإجمالي {count} عنصرًا"
+  },
+  "validation": {
+    "required": "هذا الحقل مطلوب",
+    "min": "الحد الأدنى {{min}}",
+    "max": "الحد الأقصى {{max}}"
+  },
+  "toast": {
+    "saved": "تم الحفظ بنجاح",
+    "deleted": "تم الحذف بنجاح",
+    "error": "حدث خطأ ما"
+  },
+  
+  "menu": {
+    "dashboard": "لوحة التحكم",
+    "categories": "الفئات",
+    "products": "المنتجات",
+    "orders": "الطلبات",
+    "customers": "العملاء",
+    "settings": "الإعدادات"
+  },
+  "common": {
+    "admin_panel": "لوحة الإدارة",
+    "search_placeholder": "بحث...",
+    "profile": "الملف الشخصي",
+    "logout": "تسجيل الخروج",
+    "notifications": "الإشعارات",
+    "new_order": "تم استلام طلب جديد",
+    "low_stock": "تنبيه انخفاض المخزون",
+    "out_of_stock": "نفاد المنتج",
+    "order_from": "طلب رقم {{id}} من {{name}}",
+    "low_stock_msg": "{{product}} (متبقي {{count}} وحدة)",
+    "out_of_stock_msg": "{{product}} نفد من المخزون",
+    "time_ago": "منذ {{time}}",
+    "admin_user": "مدير النظام",
+    "admin_email": "admin@fasket.com",
+    "app_name": "فاسكت"
+  }
+}

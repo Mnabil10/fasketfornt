@@ -1,0 +1,123 @@
+{
+  "appTitle": "Fasket Admin",
+  "nav": {
+    "dashboard": "Dashboard",
+    "products": "Products",
+    "categories": "Categories",
+    "orders": "Orders",
+    "customers": "Customers",
+    "settings": "Settings",
+    "logout": "Log out"
+  },
+  "actions": {
+    "add": "Add",
+    "edit": "Edit",
+    "delete": "Delete",
+    "save": "Save",
+    "cancel": "Cancel",
+    "search": "Search",
+    "filter": "Filter",
+    "export": "Export",
+    "import": "Import",
+    "publish": "Publish",
+    "unpublish": "Unpublish",
+    "create": "Create",
+    "update": "Update"
+  },
+  "products": {
+    "title": "Products",
+    "name": "Name",
+    "sku": "SKU",
+    "price": "Price",
+    "stock": "Stock",
+    "category": "Category",
+    "status": "Status",
+    "active": "Active",
+    "inactive": "Inactive",
+    "create": "Create Product",
+    "update": "Update Product",
+    "images": "Images",
+    "description": "Description"
+  },
+  "categories": {
+    "title": "Categories",
+    "name": "Name",
+    "parent": "Parent Category",
+    "create": "Create Category",
+    "update": "Update Category"
+  },
+  "orders": {
+    "title": "Orders",
+    "id": "Order ID",
+    "customer": "Customer",
+    "amount": "Amount",
+    "status": "Status",
+    "createdAt": "Created at",
+    "paid": "Paid",
+    "pending": "Pending",
+    "cancelled": "Cancelled",
+    "processing": "Processing",
+    "shipped": "Shipped",
+    "delivered": "Delivered",
+    "refunded": "Refunded"
+  },
+  "customers": {
+    "title": "Customers",
+    "name": "Name",
+    "email": "Email",
+    "phone": "Phone",
+    "address": "Address",
+    "orders": "Orders"
+  },
+  "settings": {
+    "title": "Settings",
+    "store": "Store",
+    "payments": "Payments",
+    "shipping": "Shipping",
+    "tax": "Tax",
+    "notifications": "Notifications",
+    "language": "Language",
+    "arabic": "Arabic",
+    "english": "English"
+  },
+  "table": {
+    "empty": "No data",
+    "total": "Total {count} items"
+  },
+  "validation": {
+    "required": "This field is required",
+    "min": "Must be at least {{min}}",
+    "max": "Must be at most {{max}}"
+  },
+  "toast": {
+    "saved": "Saved successfully",
+    "deleted": "Deleted successfully",
+    "error": "Something went wrong"
+  },
+  "menu": {
+    "dashboard": "Dashboard",
+    "categories": "Categories",
+    "products": "Products",
+    "orders": "Orders",
+    "customers": "Customers",
+    "settings": "Settings"
+  },
+  "common": {
+    "admin_panel": "Admin Panel",
+    "search_placeholder": "Search...",
+    "profile": "Profile",
+    "logout": "Logout",
+    "notifications": "Notifications",
+    "new_order": "New order received",
+    "low_stock": "Low stock alert",
+    "out_of_stock": "Product out of stock",
+    "order_from": "Order #{{id}} from {{name}}",
+    "low_stock_msg": "{{product}} ({{count}} units left)",
+    "out_of_stock_msg": "{{product}} is now out of stock",
+    "time_ago": "{{time}} ago",
+    "admin_user": "Admin User",
+    "admin_email": "admin@fasket.com",
+    "app_name": "Fasket"
+  }
+  
+}

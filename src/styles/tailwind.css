@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Optional small tweaks */
+@layer base {
+  html, body, #root { height: 100%; }
+}
+
+/* Replace the @apply with plain CSS so it never depends on bg-surface */
+@layer components {
+  .card {
+    background-color: var(--color-surface);    /* instead of @apply bg-surface */
+    border-radius: 16px;                       /* match your tokens */
+    box-shadow: 0 6px 24px rgba(0,0,0,.12);
+    border: 1px solid rgba(255,255,255,.05);
+  }
+}
