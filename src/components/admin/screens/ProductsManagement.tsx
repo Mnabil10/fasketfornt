@@ -112,9 +112,7 @@ export function ProductsManagement(props?: any) {
   const [editing, setEditing] = useState<Partial<Product> | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Control tabs from parent to avoid remount resets
-  const [addTab, setAddTab] = useState<"basic" | "pricing" | "inventory" | "media">("basic");
-  const [editTab, setEditTab] = useState<"basic" | "pricing" | "inventory" | "media">("basic");
+  // Tabs removed (keep no-op state eliminated)
 
   // uploads removed (S3 direct upload disabled)
   const uploading = false;
@@ -297,8 +295,6 @@ export function ProductsManagement(props?: any) {
       categoryId: "",
       isHotOffer: false,
     });
-    // reset tab
-    setAddTab("basic");
     setIsAddModalOpen(true);
   }
 
@@ -443,6 +439,17 @@ export function ProductsManagement(props?: any) {
   const ProductForm = ({ isEdit = false }: { isEdit?: boolean }) => {
     const idPrefix = isEdit ? "edit" : "add";
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const composingNameRef = React.useRef(false);
+
+    function handleNameChange(next: string) {
+      setForm((prev) => {
+        const update: any = { ...prev, name: next };
+        if (!prev.slug && !composingNameRef.current) {
+          update.slug = slugify(next);
+        }
+        return update;
+      });
+    }
     useEffect(() => {
       if (form.imageFile) {
         const url = URL.createObjectURL(form.imageFile);
@@ -462,7 +469,11 @@ export function ProductsManagement(props?: any) {
               id={`${idPrefix}-name`}
               placeholder={t("products.name") || "Product name"}
               value={form.name}
-              onChange={(e) => updateName(e.target.value)}
+              onCompositionStart={() => { composingNameRef.current = true; }}
+              onCompositionEnd={(e) => { composingNameRef.current = false; handleNameChange((e.target as HTMLInputElement).value); }}
+              onChange={(e) => handleNameChange(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
             />
           </div>
 
@@ -473,6 +484,8 @@ export function ProductsManagement(props?: any) {
               placeholder={t("products.nameAr", "Arabic Name") as string}
               value={form.nameAr || ""}
               onChange={(e) => setForm({ ...form, nameAr: e.target.value })}
+              autoComplete="off"
+              spellCheck={false}
             />
           </div>
 
@@ -483,6 +496,8 @@ export function ProductsManagement(props?: any) {
               placeholder={t("products.slug") || "slug"}
               value={form.slug}
               onChange={(e) => setForm({ ...form, slug: e.target.value })}
+              autoComplete="off"
+              spellCheck={false}
             />
           </div>
 
@@ -796,8 +811,6 @@ export function ProductsManagement(props?: any) {
           </Button>
           <DialogContent
             className="max-w-2xl max-h-[80vh] overflow-y-auto bg-white dark:bg-slate-900"
-            aria-describedby={undefined}
-            onOpenAutoFocus={(e) => e.preventDefault()}
           >
             <DialogHeader>
               <DialogTitle>{t("products.addNew")}</DialogTitle>
@@ -1103,8 +1116,6 @@ export function ProductsManagement(props?: any) {
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
         <DialogContent
           className="max-w-2xl max-h-[80vh] overflow-y-auto bg-white dark:bg-slate-900"
-          aria-describedby={undefined}
-          onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <DialogHeader>
             <DialogTitle>{t("products.editProduct", "تعديل المنتج")}</DialogTitle>
