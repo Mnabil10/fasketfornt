@@ -1,9 +1,13 @@
 import axios from "axios";
 import type { AxiosError, AxiosRequestConfig } from "axios";
+import { toast } from "sonner";
+import i18n from "../i18n";
 import { refreshAccessToken } from "../services/auth.service";
+import { emitAuthEvent } from "./auth-events";
 
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "https://api.fasket.cloud",
+  // baseURL: import.meta.env.VITE_API_URL || "https://api.fasket.cloud",
+  baseURL: import.meta.env.VITE_API_URL || "http://localhost:4000",
   timeout: 15000,
 });
 
@@ -21,8 +25,35 @@ const onRefreshed = (t: string) => { queue.forEach((cb) => cb(t)); queue = []; }
 
 type RetryableConfig = AxiosRequestConfig & { _retry?: boolean };
 
+function hardSignOut() {
+  localStorage.removeItem("fasket_admin_token");
+  localStorage.removeItem("fasket_admin_refresh");
+  localStorage.removeItem("fasket_admin_user");
+  emitAuthEvent("logout");
+}
+
 api.interceptors.response.use(
-  (r) => r,
+  (response) => {
+    const responseType = response.config?.responseType;
+    if (responseType && responseType !== "json" && responseType !== undefined) {
+      return response;
+    }
+    const payload = response.data;
+    if (payload && typeof payload === "object" && Object.prototype.hasOwnProperty.call(payload, "success")) {
+      if (payload.success !== false) {
+        return { ...response, data: payload.data };
+      }
+      const error = new Error(payload?.error?.message || "Request failed");
+      (error as any).isAxiosError = true;
+      (error as any).response = {
+        ...response,
+        data: payload.error ?? payload,
+      };
+      (error as any).config = response.config;
+      return Promise.reject(error);
+    }
+    return response;
+  },
   async (err: AxiosError) => {
     const status = err.response?.status;
     const original = (err.config || {}) as RetryableConfig;
@@ -32,7 +63,7 @@ api.interceptors.response.use(
       original._retry = true;
       const rt = localStorage.getItem("fasket_admin_refresh");
       if (!rt) {
-        localStorage.clear();
+        hardSignOut();
         location.href = "/signin";
         throw err;
       }
@@ -56,7 +87,8 @@ api.interceptors.response.use(
         onRefreshed(accessToken);
         return api(original);
       } catch (e) {
-        localStorage.clear();
+        toast.error(i18n.t("auth.sessionExpired", "Session expired, please login again"));
+        hardSignOut();
         location.href = "/signin";
         throw e;
       } finally {

@@ -1,26 +1,41 @@
-import React, { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { listCoupons, createCoupon, updateCoupon, type Coupon } from '../../../services/coupons.service';
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
-import { Button } from '../../ui/button';
-import { Input } from '../../ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
-import { Switch } from '../../ui/switch';
-import { Label } from '../../ui/label';
-import { Plus, Search, Edit } from 'lucide-react';
-import { toast } from 'sonner';
+import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { createCoupon, updateCoupon, type Coupon } from "../../../services/coupons.service";
+import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
+import { Button } from "../../ui/button";
+import { Input } from "../../ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../ui/table";
+import { Switch } from "../../ui/switch";
+import { Label } from "../../ui/label";
+import { Plus, Search, Edit } from "lucide-react";
+import { toast } from "sonner";
+import { useCouponsAdmin, COUPONS_QUERY_KEY } from "../../../hooks/api/useCouponsAdmin";
+import { getApiErrorMessage } from "../../../lib/errors";
+import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
+import { EmptyState } from "../../admin/common/EmptyState";
+import { ErrorState } from "../../admin/common/ErrorState";
 
 export function CouponsManagement() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
 
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 20;
-  const [items, setItems] = useState<Coupon[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const couponsQuery = useCouponsAdmin(
+    {
+      q: q.trim() || undefined,
+      page,
+      pageSize,
+    },
+    { enabled: true }
+  );
+  const items = couponsQuery.data?.items ?? [];
+  const total = couponsQuery.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Coupon | null>(null);
@@ -44,21 +59,17 @@ export function CouponsManagement() {
     maxDiscountCents: '',
   });
 
-  async function load() {
-    setLoading(true);
-    try {
-      const res = await listCoupons({ q, page, pageSize });
-      setItems(res.items);
-      setTotal(res.total);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, page]);
+  const upsertCouponMutation = useMutation({
+    mutationFn: ({ id, data }: { id?: string; data: any }) => (id ? updateCoupon(id, data) : createCoupon(data)),
+    onSuccess: async (_data, variables) => {
+      toast.success(
+        variables.id ? t('coupons.updated') || 'Coupon updated' : t('coupons.created') || 'Coupon created'
+      );
+      setOpen(false);
+      await queryClient.invalidateQueries({ queryKey: COUPONS_QUERY_KEY });
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, t('coupons.saveFailed', 'Unable to save coupon'))),
+  });
 
   function openCreate() {
     setEditing(null);
@@ -81,34 +92,21 @@ export function CouponsManagement() {
   }
 
   async function save() {
-    try {
-      const payload: any = {
-        code: form.code.trim(),
-        type: form.type,
-        valueCents: form.type === 'PERCENT' ? Math.trunc(Number(form.valueCents || 0)) : Math.trunc(Number(form.valueCents || 0)),
-        isActive: !!form.isActive,
-        startsAt: form.startsAt || undefined,
-        endsAt: form.endsAt || undefined,
-        minOrderCents: form.minOrderCents ? Math.trunc(Number(form.minOrderCents)) : undefined,
-        maxDiscountCents: form.maxDiscountCents ? Math.trunc(Number(form.maxDiscountCents)) : undefined,
-      };
-      if (!payload.code) {
-        toast.error(t('coupons.code_required') || 'Code is required');
-        return;
-      }
-
-      if (editing) {
-        await updateCoupon(editing.id, payload);
-        toast.success(t('coupons.updated') || 'Coupon updated');
-      } else {
-        await createCoupon(payload);
-        toast.success(t('coupons.created') || 'Coupon created');
-      }
-      setOpen(false);
-      await load();
-    } catch (e: any) {
-      toast.error(String(e?.response?.data?.message || e?.message || 'Save failed'));
+    const payload: any = {
+      code: form.code.trim(),
+      type: form.type,
+      valueCents: Math.trunc(Number(form.valueCents || 0)),
+      isActive: !!form.isActive,
+      startsAt: form.startsAt || undefined,
+      endsAt: form.endsAt || undefined,
+      minOrderCents: form.minOrderCents ? Math.trunc(Number(form.minOrderCents)) : undefined,
+      maxDiscountCents: form.maxDiscountCents ? Math.trunc(Number(form.maxDiscountCents)) : undefined,
+    };
+    if (!payload.code) {
+      toast.error(t('coupons.code_required') || 'Code is required');
+      return;
     }
+    await upsertCouponMutation.mutateAsync({ id: editing?.id, data: payload });
   }
 
   return (
@@ -189,41 +187,55 @@ export function CouponsManagement() {
             </div>
           </div>
           <div className="w-full overflow-x-auto">
-            <Table className="min-w-[760px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('coupons.code', 'Code')}</TableHead>
-                  <TableHead>{t('coupons.type', 'Type')}</TableHead>
-                  <TableHead>{t('coupons.value', 'Value')}</TableHead>
-                  <TableHead>{t('coupons.active', 'Active')}</TableHead>
-                  <TableHead>{t('coupons.startsAt', 'Starts')}</TableHead>
-                  <TableHead>{t('coupons.endsAt', 'Ends')}</TableHead>
-                  <TableHead className="text-right">{t('app.actions.actions', 'Actions')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell className="font-mono">{c.code}</TableCell>
-                    <TableCell>{c.type}</TableCell>
-                    <TableCell>{c.valueCents}</TableCell>
-                    <TableCell>{c.isActive ? t('app.yes', 'Yes') : t('app.no', 'No')}</TableCell>
-                    <TableCell className="text-xs text-gray-600">{c.startsAt || '-'}</TableCell>
-                    <TableCell className="text-xs text-gray-600">{c.endsAt || '-'}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" aria-label={t('coupons.edit', 'Edit')} onClick={() => openEdit(c)}>
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!items.length && (
+            {couponsQuery.isLoading ? (
+              <AdminTableSkeleton rows={5} columns={7} />
+            ) : couponsQuery.isError ? (
+              <ErrorState
+                message={t("coupons.loadError") || "Unable to load coupons"}
+                onRetry={() => couponsQuery.refetch()}
+              />
+            ) : items.length === 0 ? (
+              <EmptyState
+                title={t("coupons.emptyTitle") || "No coupons found"}
+                description={t("coupons.emptyDescription") || "Create a coupon to get started."}
+                action={
+                  <Button size="sm" variant="outline" onClick={() => couponsQuery.refetch()}>
+                    {t("app.actions.retry")}
+                  </Button>
+                }
+              />
+            ) : (
+              <Table className="min-w-[760px]">
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-gray-500">{t('app.table.noData') || 'No data'}</TableCell>
+                    <TableHead>{t("coupons.code", "Code")}</TableHead>
+                    <TableHead>{t("coupons.type", "Type")}</TableHead>
+                    <TableHead>{t("coupons.value", "Value")}</TableHead>
+                    <TableHead>{t("coupons.active", "Active")}</TableHead>
+                    <TableHead>{t("coupons.startsAt", "Starts")}</TableHead>
+                    <TableHead>{t("coupons.endsAt", "Ends")}</TableHead>
+                    <TableHead className="text-right">{t("app.actions.actions", "Actions")}</TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {items.map((c) => (
+                    <TableRow key={c.id}>
+                      <TableCell className="font-mono">{c.code}</TableCell>
+                      <TableCell>{c.type}</TableCell>
+                      <TableCell>{c.valueCents}</TableCell>
+                      <TableCell>{c.isActive ? t("app.yes", "Yes") : t("app.no", "No")}</TableCell>
+                      <TableCell className="text-xs text-gray-600">{c.startsAt || "-"}</TableCell>
+                      <TableCell className="text-xs text-gray-600">{c.endsAt || "-"}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" aria-label={t("coupons.edit", "Edit")} onClick={() => openEdit(c)}>
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </div>
           <div className="flex items-center justify-between text-sm text-gray-600">
             <span>
@@ -232,9 +244,16 @@ export function CouponsManagement() {
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>{t('app.actions.prev','Prev')}</Button>
               <span>
-                {t('app.table.page') || 'Page'} {page} / {Math.max(1, Math.ceil(total / pageSize))}
+                {t('app.table.page') || 'Page'} {page} / {totalPages}
               </span>
-              <Button variant="outline" size="sm" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage((p) => p + 1)}>{t('app.actions.next','Next')}</Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                {t('app.actions.next','Next')}
+              </Button>
             </div>
           </div>
         </CardContent>

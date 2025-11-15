@@ -1,8 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { listOrders, getOrder, updateOrderStatus, OrderSummary } from "../../../services/orders.service";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getOrder, updateOrderStatus, OrderSummary } from "../../../services/orders.service";
 import { fmtEGP } from "../../../lib/money";
 import { toast } from "sonner";
+import { useOrdersAdmin, ORDERS_QUERY_KEY } from "../../../hooks/api/useOrdersAdmin";
+import { getApiErrorMessage } from "../../../lib/errors";
+import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
+import { EmptyState } from "../../admin/common/EmptyState";
+import { ErrorState } from "../../admin/common/ErrorState";
 
 // shadcn ui
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
@@ -35,6 +41,7 @@ const ALL = "ALL"; // Radix: avoid empty-string Select values
 
 export function OrdersManagement(props?: any) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
 
   // === state (same logic & shapes as your old page)
   type OrderStatus = OrderSummary["status"];
@@ -49,12 +56,24 @@ export function OrdersManagement(props?: any) {
     page: 1,
   });
   const pageSize = 20;
-  const [items, setItems] = useState<OrderListItem[]>([]);
-  const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState<OrderDetail | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
 
+  const apiFilters = useMemo(
+    () => ({
+      status: filters.status || undefined,
+      dateFrom: filters.from || undefined,
+      dateTo: filters.to || undefined,
+      search: filters.customer.trim() || undefined,
+      page: filters.page,
+      pageSize,
+    }),
+    [filters, pageSize]
+  );
+
+  const ordersQuery = useOrdersAdmin(apiFilters);
+  const items = (ordersQuery.data?.items as OrderListItem[]) || [];
+  const total = ordersQuery.data?.total || 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const locale = "ar-EG"; // same as old page
 
@@ -74,26 +93,6 @@ export function OrdersManagement(props?: any) {
     [t]
   );
 
-  // === data (same logic calls)
-  async function load() {
-    setLoading(true);
-    const res = await listOrders({
-      status: (filters.status || undefined) as OrderStatus | undefined,
-      from: filters.from || undefined,
-      to: filters.to || undefined,
-      customer: filters.customer || undefined,
-      page: filters.page,
-      pageSize,
-    });
-    setItems(res.items);
-    setTotal(res.total);
-    setLoading(false);
-  }
-  useEffect(() => {
-    // same dependency as old: any filter change reloads
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
 
   async function openDetail(id: string) {
     const detail = await getOrder(id);
@@ -112,13 +111,23 @@ export function OrdersManagement(props?: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props?.adminState?.selectedOrder]);
 
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ id, to }: { id: string; to: OrderStatus }) => updateOrderStatus(id, { to }),
+    onSuccess: async (_data, variables) => {
+      toast.success(t("orders.updated") || "Order updated");
+      await queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
+      try {
+        await openDetail(variables.id);
+      } catch {
+        // swallow detail reload errors
+      }
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, t("orders.updateFailed", "Unable to update order"))),
+  });
+
   async function changeStatus(to: OrderStatus) {
     if (!selected) return;
-    await updateOrderStatus(selected.id, { to });
-    toast.success(t("orders.updated") || "Order updated");
-    // refresh detail & list like old page
-    await openDetail(selected.id);
-    await load();
+    await updateStatusMutation.mutateAsync({ id: selected.id, to });
   }
 
   // quick stats (optional pretty header, derived from current page)
@@ -267,7 +276,7 @@ export function OrdersManagement(props?: any) {
               </div>
             </div>
 
-            <Button onClick={() => load()} disabled={loading}>
+            <Button onClick={() => ordersQuery.refetch()} disabled={ordersQuery.isFetching}>
               {t("app.actions.apply")}
             </Button>
           </div>
@@ -281,79 +290,91 @@ export function OrdersManagement(props?: any) {
         </CardHeader>
         <CardContent className="p-0 lg:p-6">
           <div className="overflow-x-auto">
-            <Table className="min-w-[900px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("dashboard.orderId")}</TableHead>
-                  <TableHead>{t("dashboard.customer")}</TableHead>
-                  <TableHead>{t("dashboard.total")}</TableHead>
-                  <TableHead>{t("dashboard.createdAt")}</TableHead>
-                  <TableHead>{t("dashboard.status")}</TableHead>
-                  <TableHead className="text-right">{t("common.actions") || ""}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {!items.length && (
-                  <TableRow>
-                    <TableCell colSpan={6}>{t("app.table.noData")}</TableCell>
-                  </TableRow>
-                )}
-                {items.map((o) => {
-                  const meta = statusMeta[o.status] ?? { label: o.status, color: "", icon: Clock };
-                  const Icon = meta.icon;
-                  return (
-                    <TableRow key={o.id}>
-                      <TableCell>
-                        <div className="font-mono">{o.id}</div>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{o.user?.name || o.user?.phone || "-"}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{fmtEGP(o.totalCents)}</div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">{new Date(o.createdAt).toLocaleString(locale)}</div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={meta.color}>
-                          <Icon className="w-3 h-3 mr-1" />
-                          {meta.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => openDetail(o.id)}>
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                      </TableCell>
+            {ordersQuery.isLoading ? (
+              <AdminTableSkeleton rows={4} columns={6} />
+            ) : ordersQuery.isError ? (
+              <ErrorState message={t("orders.loadError") || "Unable to load orders"} onRetry={() => ordersQuery.refetch()} />
+            ) : items.length === 0 ? (
+              <EmptyState
+                title={t("orders.emptyTitle") || "No orders found"}
+                description={t("orders.emptyDescription") || "Adjust filters or try again later."}
+                action={
+                  <Button size="sm" variant="outline" onClick={() => ordersQuery.refetch()}>
+                    {t("app.actions.retry")}
+                  </Button>
+                }
+              />
+            ) : (
+              <>
+                <Table className="min-w-[900px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("dashboard.orderId")}</TableHead>
+                      <TableHead>{t("dashboard.customer")}</TableHead>
+                      <TableHead>{t("dashboard.total")}</TableHead>
+                      <TableHead>{t("dashboard.createdAt")}</TableHead>
+                      <TableHead>{t("dashboard.status")}</TableHead>
+                      <TableHead className="text-right">{t("common.actions") || ""}</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((o) => {
+                      const meta = statusMeta[o.status] ?? { label: o.status, color: "", icon: Clock };
+                      const Icon = meta.icon;
+                      return (
+                        <TableRow key={o.id}>
+                          <TableCell>
+                            <div className="font-mono">{o.id}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{o.user?.name || o.user?.phone || "-"}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{fmtEGP(o.totalCents)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">{new Date(o.createdAt).toLocaleString(locale)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={meta.color}>
+                              <Icon className="w-3 h-3 mr-1" />
+                              {meta.label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="sm" onClick={() => openDetail(o.id)}>
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
 
-          {/* Pagination (same logic) */}
-          <div className="flex items-center gap-2 justify-end p-4">
-            <Button
-              variant="outline"
-              disabled={filters.page === 1}
-              onClick={() => setFilters((f) => ({ ...f, page: f.page - 1 }))}
-            >
-              {t("app.actions.prev")}
-            </Button>
-            <span className="text-sm">
-              {t("app.table.page")} {filters.page} {t("app.table.of")} {pageCount}
-            </span>
-            <Button
-              variant="outline"
-              disabled={filters.page * pageSize >= total}
-              onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}
-            >
-              {t("app.actions.next")}
-            </Button>
+                <div className="flex items-center gap-2 justify-end p-4">
+                  <Button
+                    variant="outline"
+                    disabled={filters.page === 1}
+                    onClick={() => setFilters((f) => ({ ...f, page: f.page - 1 }))}
+                  >
+                    {t("app.actions.prev")}
+                  </Button>
+                  <span className="text-sm">
+                    {t("app.table.page")} {filters.page} {t("app.table.of")} {pageCount}
+                  </span>
+                  <Button
+                    variant="outline"
+                    disabled={filters.page >= pageCount}
+                    onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}
+                  >
+                    {t("app.actions.next")}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>

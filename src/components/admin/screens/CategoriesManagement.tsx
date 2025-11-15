@@ -1,14 +1,16 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm, type Resolver } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  listCategories,
   createCategory,
   updateCategory,
   deleteCategory,
-  Category,
+  reorderCategories,
+  type Category,
 } from "../../../services/categories.service";
-
-// UI (shadcn)
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";
@@ -17,17 +19,10 @@ import { Badge } from "../../ui/badge";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "../../ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../ui/select";
 import {
   Table,
   TableBody,
@@ -47,715 +42,574 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "../../ui/alert-dialog";
-import { Plus, Search, Edit, Trash2, Image as ImageIcon } from "lucide-react";
+import { Switch } from "../../ui/switch";
 import { ImageWithFallback } from "../../figma/ImageWithFallback";
+import { Plus, Search, Edit, Trash2, GripVertical, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../../auth/AuthProvider";
-const MAX_FILE_MB = 10;
+import { useDebounce } from "../../../hooks/useDebounce";
+import { useCategoriesAdmin, CATEGORIES_QUERY_KEY } from "../../../hooks/api/useCategoriesAdmin";
+import { getApiErrorMessage } from "../../../lib/errors";
+import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
+import { EmptyState } from "../../admin/common/EmptyState";
+import { ErrorState } from "../../admin/common/ErrorState";
 
-// ------------------- Helpers (kept from your first file) -------------------
-function toSlug(str: string) {
-  const arabicMap: Record<string, string> = {
-    "٠": "0",
-    "١": "1",
-    "٢": "2",
-    "٣": "3",
-    "٤": "4",
-    "٥": "5",
-    "٦": "6",
-    "٧": "7",
-    "٨": "8",
-    "٩": "9",
-  };
-  const normalized = (str || "")
+const PAGE_SIZE = 20;
+const MAX_FILE_MB = 5;
+
+const categoryFormSchema = z.object({
+  name: z.string().min(2, "Name is required"),
+  nameAr: z.string().optional(),
+  slug: z
+    .string()
+    .min(2, "Slug is required")
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use lowercase letters, numbers, and hyphen only"),
+  parentId: z.string().optional(),
+  sortOrder: z.string().optional(),
+  isActive: z
+    .boolean()
+    .optional()
+    .transform((value) => (typeof value === "boolean" ? value : true)),
+  imageUrl: z.string().optional(),
+});
+
+type CategoryFormValues = z.infer<typeof categoryFormSchema>;
+
+type DialogState = { mode: "create" | "edit"; category?: Category } | null;
+
+type ReorderItem = { id: string; sortOrder: number };
+
+type CategoryFormDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  mode: "create" | "edit";
+  category?: Category;
+  parents: Category[];
+  loading: boolean;
+  onSubmit: (values: CategoryFormValues, imageFile: File | null) => void;
+};
+
+function normalizeDigits(value: string) {
+  return (value || "")
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+}
+
+function slugify(value: string) {
+  return normalizeDigits(value)
     .trim()
     .toLowerCase()
-    .replace(/[\u0660-\u0669]/g, (d) => arabicMap[d] ?? d);
-  return normalized
-    .replace(/[^\w\s-]/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
     .replace(/\s+/g, "-")
-    .replace(/-+/g, "-");
-}
-function isValidSlug(s: string) {
-  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s) && s.length <= 64;
+    .replace(/-+/g, "-")
+    .slice(0, 64);
 }
 
-// ------------------- Component -------------------
+function mapCategoryToForm(category?: Category): CategoryFormValues {
+  if (!category) {
+    return {
+      name: "",
+      nameAr: "",
+      slug: "",
+      parentId: "",
+      sortOrder: "0",
+      isActive: true,
+      imageUrl: "",
+    };
+  }
+  return {
+    name: category.name,
+    nameAr: category.nameAr || "",
+    slug: category.slug,
+    parentId: category.parentId || "",
+    sortOrder: String(category.sortOrder ?? 0),
+    isActive: !!category.isActive,
+    imageUrl: category.imageUrl || "",
+  };
+}
+
 export function CategoriesManagement() {
   const { t } = useTranslation();
   const { isAdmin } = useAuth();
-
-  // table state (from first file)
-  const [search, setSearch] = useState("");
+  const queryClient = useQueryClient();
+  const [searchInput, setSearchInput] = useState("");
+  const debouncedSearch = useDebounce(searchInput, 400);
   const [page, setPage] = useState(1);
-  const pageSize = 20;
-  const [items, setItems] = useState<Category[]>([]);
-  const [total, setTotal] = useState(0);
+  const [dialogState, setDialogState] = useState<DialogState>(null);
+  const [rows, setRows] = useState<Category[]>([]);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
-  // modal / form state
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editing, setEditing] = useState<Category | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState<{
-    name: string;
-    nameAr?: string;
-    slug: string;
-    imageUrl: string;
-    imageFile?: File | null;
-    isActive: boolean;
-    sortOrder: number;
-    parentId: string | "";
-  }>({
-    name: "",
-    nameAr: "",
-    slug: "",
-    imageUrl: "",
-    imageFile: null,
-    isActive: true,
-    sortOrder: 0,
-    parentId: "",
+  const categoriesQuery = useCategoriesAdmin(
+    {
+      q: debouncedSearch.trim() || undefined,
+      page,
+      pageSize: PAGE_SIZE,
+    },
+    { enabled: true }
+  );
+
+  const categoryData = categoriesQuery.data;
+  const categoryItems: Category[] = categoryData?.items ?? [];
+
+  useEffect(() => {
+    if (categoryData?.items) {
+      setRows(categoryData.items);
+    }
+  }, [categoryData?.items]);
+
+  const parents = useMemo(() => categoryItems.filter((item) => !item.parentId), [categoryItems]);
+  const parentNames = useMemo(() => {
+    const lookup = new Map<string, string>();
+    categoryItems.forEach((item) => lookup.set(item.id, item.name));
+    return lookup;
+  }, [categoryItems]);
+
+  const saveMutation = useMutation({
+    mutationFn: async ({
+      id,
+      values,
+      imageFile,
+    }: {
+      id?: string;
+      values: CategoryFormValues;
+      imageFile: File | null;
+    }) => {
+      const payload: Partial<Category> = {
+        name: values.name.trim(),
+        nameAr: values.nameAr?.trim() || undefined,
+        slug: values.slug,
+        parentId: values.parentId ? values.parentId : null,
+        isActive: values.isActive,
+        sortOrder: Number(values.sortOrder || 0),
+        imageUrl: imageFile ? undefined : values.imageUrl || undefined,
+      };
+      if (id) {
+        return updateCategory(id, payload, imageFile);
+      }
+      return createCategory(payload, imageFile);
+    },
+    onSuccess: (_, variables) => {
+      toast.success(
+        variables.id ? t("categories.updated", "Category updated") : t("categories.created", "Category created")
+      );
+      queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
+      setDialogState(null);
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, t("app.notifications.error"))),
   });
 
-  // derived: parent categories and quick lookups
-  const parentCandidates = useMemo(
-    () => items.filter((c) => !c.parentId),
-    [items]
-  );
-  const nameById = useMemo(() => {
-    const m = new Map<string, string>();
-    items.forEach((c) => m.set(c.id, c.name));
-    return m;
-  }, [items]);
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteCategory(id),
+    onSuccess: () => {
+      toast.success(t("categories.deleted", "Category deleted"));
+      queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, t("app.notifications.error"))),
+  });
 
-  async function load() {
-    const res = await listCategories({ q: search, page, pageSize });
-    setItems(res.items);
-    setTotal(res.total);
-  }
+  const reorderMutation = useMutation({
+    mutationFn: (items: ReorderItem[]) => reorderCategories(items),
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, t("categories.reorder_error", "Unable to reorder categories")));
+      // revert visual order
+      if (categoryItems.length) setRows(categoryItems);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY }),
+  });
 
-  useEffect(() => {
-    // auto-load on search/page changes (kept behavior)
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, page]);
+  const total = categoryData?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  function openCreate() {
-    setEditing(null);
-    setError(null);
-    setForm({
-      name: "",
-      slug: "",
-      imageUrl: "",
-      imageFile: null,
-      isActive: true,
-      sortOrder: 0,
-      parentId: "",
+  const handleReorder = (targetId: string) => {
+    if (!draggingId || draggingId === targetId) return;
+    setRows((prev) => {
+      const next = [...prev];
+      const fromIndex = next.findIndex((item) => item.id === draggingId);
+      const toIndex = next.findIndex((item) => item.id === targetId);
+      if (fromIndex === -1 || toIndex === -1) return prev;
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      const base = (page - 1) * PAGE_SIZE;
+      reorderMutation.mutate(next.map((category, index) => ({ id: category.id, sortOrder: base + index })));
+      return next;
     });
-    setIsCreateOpen(true);
-  }
+  };
 
-  function openEdit(c: Category) {
-    setEditing(c);
-    setError(null);
-    setForm({
-      name: c.name || "",
-      nameAr: c.nameAr || "",
-      slug: c.slug || "",
-      imageUrl: c.imageUrl || "",
-      imageFile: null,
-      isActive: !!c.isActive,
-      sortOrder: c.sortOrder ?? 0,
-      parentId: c.parentId || "",
-    });
-    setIsEditOpen(true);
-  }
-
-  function normalizeImageFileType(file: File): File {
-    const type = (file.type || "").toLowerCase();
-    let target = type;
-    if (type === "image/x-png") target = "image/png";
-    if (type === "image/jpg" || type === "image/pjpeg") target = "image/jpeg";
-    if (!target) {
-      const lower = file.name.toLowerCase();
-      if (lower.endsWith(".png")) target = "image/png";
-      else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".jfif")) target = "image/jpeg";
-      else if (lower.endsWith(".webp")) target = "image/webp";
-    }
-    if (target && target !== type) {
-      return new File([file], file.name, { type: target });
-    }
-    return file;
-  }
-
-  // Preview URL cleanup for category image
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (form.imageFile) {
-      const url = URL.createObjectURL(form.imageFile);
-      setPreviewUrl(url);
-      return () => URL.revokeObjectURL(url);
-    }
-    setPreviewUrl(null);
-  }, [form.imageFile]);
-
-  function updateName(next: string) {
-    setForm((prev) => ({
-      ...prev,
-      name: next,
-      slug: prev.slug ? prev.slug : toSlug(next),
-    }));
-  }
-
-  async function saveCreateOrUpdate() {
-    setError(null);
-
-    const name = (form.name || "").trim();
-    let slug = (form.slug || "").trim();
-    if (!slug && name) slug = toSlug(name);
-
-    if (!name || !slug || !isValidSlug(slug)) {
-      setError(
-        `${t("categories.name")} / ${t("categories.slug")} ${
-          t("app.notifications.error") || ""
-        }`
-      );
-      return;
-    }
-
-    const so = Math.max(0, Math.trunc(Number(form.sortOrder || 0)));
-    const payload = {
-      name,
-      nameAr: form.nameAr || undefined,
-      slug,
-      imageUrl: form.imageUrl || null,
-      isActive: !!form.isActive,
-      sortOrder: so,
-      parentId: form.parentId ? String(form.parentId) : null,
-    };
-
-    try {
-      setSaving(true);
-      if (editing?.id) {
-        await updateCategory(editing.id, payload, form.imageFile || null);
-        toast.success(t("categories.updated") || "Category updated");
-        setIsEditOpen(false);
-        setEditing(null);
-      } else {
-        await createCategory(payload as Partial<Category>, form.imageFile || null);
-        toast.success(t("categories.created") || "Category created");
-        setIsCreateOpen(false);
-      }
-      await load();
-    } catch (e: any) {
-      const msg =
-        e?.response?.data?.message ||
-        e?.response?.data?.error ||
-        e?.message ||
-        "Failed to save category";
-      console.error("create/update category error:", e);
-      setError(String(msg));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // ------------------- UI -------------------
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="p-4 lg:p-6 space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="font-poppins text-3xl text-gray-900" style={{ fontWeight: 700 }}>
-            {t("categories.title") || "Categories Management"}
-          </h1>
-          <p className="text-gray-600 mt-1">
-            {t("categories.subtitle") || "Organize your products into categories"}
-          </p>
+          <h2 className="text-2xl lg:text-3xl font-semibold text-foreground">{t("categories.title")}</h2>
+          <p className="text-sm text-muted-foreground">{t("categories.subtitle", "Organize and reorder category hierarchy")}</p>
         </div>
+        <Button className="gap-2" onClick={() => setDialogState({ mode: "create" })}>
+          <Plus className="w-4 h-4" />
+          {t("categories.addNew", "Add category")}
+        </Button>
+      </div>
 
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogTrigger asChild>
-            <Button className="flex items-center gap-2 w-full sm:w-auto" onClick={openCreate}>
-              <Plus className="w-4 h-4" />
-              {t("categories.addNew") || "Add Category"}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md" aria-describedby={undefined}>
-            <DialogHeader>
-              <DialogTitle>{t("categories.addNew") || "Add New Category"}</DialogTitle>
-            </DialogHeader>
+      <Card>
+        <CardContent className="p-4 space-y-4">
+          <div className="relative max-w-lg">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchInput}
+              onChange={(event) => {
+                setSearchInput(event.target.value);
+                setPage(1);
+              }}
+              placeholder={t("filters.searchPlaceholder", "Search categories")}
+              className="pl-9"
+            />
+          </div>
 
-            {error && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">
-                {String(error)}
+          <div className="border rounded-lg">
+            {categoriesQuery.isLoading ? (
+              <div className="p-4">
+                <AdminTableSkeleton rows={5} columns={8} />
               </div>
-            )}
-
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">{t("categories.name") || "Category Name"}</Label>
-                <Input
-                  id="name"
-                  placeholder={t("categories.name") || "Enter category name"}
-                  value={form.name}
-                  onChange={(e) => updateName(e.target.value)}
-                />
+            ) : categoriesQuery.isError ? (
+              <div className="p-6">
+                <ErrorState message={t("categories.loadError") || "Unable to load categories"} onRetry={() => categoriesQuery.refetch()} />
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="nameAr">{t("categories.nameAr", "Arabic Name")}</Label>
-                <Input
-                  id="nameAr"
-                  placeholder={t("categories.nameAr", "Arabic Name") as string}
-                  value={form.nameAr || ""}
-                  onChange={(e) => setForm({ ...form, nameAr: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="slug">{t("categories.slug") || "Slug"}</Label>
-                <Input
-                  id="slug"
-                  placeholder="e.g. fresh-fruits"
-                  value={form.slug}
-                  onChange={(e) => setForm({ ...form, slug: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="parent">{t("categories.parent") || "Parent Category (Optional)"}</Label>
-                <Select
-                  value={form.parentId || "none"}
-                  onValueChange={(value) =>
-                    setForm({ ...form, parentId: value === "none" ? "" : value })
+            ) : rows.length === 0 ? (
+              <div className="p-6">
+                <EmptyState
+                  title={t("categories.emptyTitle") || "No categories yet"}
+                  description={t("categories.emptyDescription") || "Start by creating your first category."}
+                  action={
+                    <Button size="sm" variant="outline" onClick={() => categoriesQuery.refetch()}>
+                      {t("app.actions.retry")}
+                    </Button>
                   }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={t("categories.parent") || "Select parent category"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">
-                      {t("categories.root") || "None (Root Category)"}
-                    </SelectItem>
-                    {parentCandidates.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="imageFile">{t("categories.image") || "Image"}</Label>
-                <Input
-                  id="imageFile"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={(e: any) => {
-                    const file = e.target?.files?.[0] || null;
-                    const fixed = file ? normalizeImageFileType(file) : null;
-                    if (fixed && fixed.size > MAX_FILE_MB * 1024 * 1024) {
-                      toast.error(`${MAX_FILE_MB}MB ${t("products.upload.too_large", "File too large")}`);
-                      return;
-                    }
-                    setForm({ ...form, imageFile: fixed });
-                  }}
                 />
-                {(form.imageFile || form.imageUrl) && (
-                  <div className="w-24 h-24 rounded-lg overflow-hidden bg-gray-100">
-                    {form.imageFile ? (
-                      <img src={previewUrl || undefined} alt="preview" className="w-full h-full object-cover" />
-                    ) : (
-                      <img
-                        src={form.imageUrl}
-                        alt="preview"
-                        className="w-full h-full object-cover"
-                      />
-                    )}
-                  </div>
-                )}
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="sortOrder">{t("categories.sortOrder") || "Sort Order"}</Label>
-                  <Input
-                    id="sortOrder"
-                    type="number"
-                    min={0}
-                    value={form.sortOrder}
-                    onChange={(e) => {
-                      const v = Math.max(0, Math.trunc(Number(e.target.value || 0)));
-                      setForm({ ...form, sortOrder: v });
-                    }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>{t("categories.active") || "Active"}</Label>
-                  <Select
-                    value={form.isActive ? "true" : "false"}
-                    onValueChange={(v) => setForm({ ...form, isActive: v === "true" })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="true">{t("app.yes") || "Yes"}</SelectItem>
-                      <SelectItem value="false">{t("app.no") || "No"}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-4">
-                <Button onClick={saveCreateOrUpdate} className="flex-1" disabled={saving}>
-                  {saving ? t("auth.signing_in") || "Saving..." : t("app.actions.save") || "Save"}
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12"></TableHead>
+                    <TableHead>{t("categories.name")}</TableHead>
+                    <TableHead>{t("categories.nameAr", "Arabic Name")}</TableHead>
+                    <TableHead>{t("categories.slug")}</TableHead>
+                    <TableHead>{t("categories.parent")}</TableHead>
+                    <TableHead>{t("categories.sortOrder")}</TableHead>
+                    <TableHead>{t("categories.active")}</TableHead>
+                    <TableHead className="text-right">{t("app.actions.actions")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((category) => (
+                    <TableRow
+                      key={category.id}
+                      draggable
+                      onDragStart={() => setDraggingId(category.id)}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={() => handleReorder(category.id)}
+                      onDragEnd={() => setDraggingId(null)}
+                    >
+                      <TableCell className="text-muted-foreground">
+                        <GripVertical className="w-4 h-4" />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-md overflow-hidden bg-muted">
+                            {category.imageUrl ? (
+                              <ImageWithFallback src={category.imageUrl} alt={category.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                <ImageIcon className="w-4 h-4" />
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">{category.name}</p>
+                            <p className="text-xs text-muted-foreground">ID: {category.id.slice(0, 6)}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>{category.nameAr || "--"}</TableCell>
+                      <TableCell>{category.slug}</TableCell>
+                      <TableCell>{category.parentId ? parentNames.get(category.parentId) || "--" : t("categories.root", "Root")}</TableCell>
+                      <TableCell>{category.sortOrder ?? 0}</TableCell>
+                      <TableCell>
+                        <Badge className={category.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}>
+                          {category.isActive ? t("app.yes", "Active") : t("app.no", "Inactive")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button variant="ghost" size="icon" onClick={() => setDialogState({ mode: "edit", category })}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          {isAdmin && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="text-rose-600">
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>{t("categories.delete", "Delete category")}</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    {t("categories.delete_confirm", "This action cannot be undone.")}
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>{t("app.actions.cancel")}</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deleteMutation.mutate(category.id)}>
+                                    {t("app.actions.delete")}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+            <div className="flex items-center justify-between px-4 py-3 border-t text-sm">
+              <span>
+                {t("app.table.page")} {page} {t("app.table.of")} {totalPages}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page === 1}
+                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                >
+                  {t("app.actions.prev")}
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => setIsCreateOpen(false)}
-                  className="flex-1"
-                  disabled={saving}
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                 >
-                  {t("app.actions.cancel") || "Cancel"}
+                  {t("app.actions.next")}
                 </Button>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Search */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                placeholder={t("filters.searchPlaceholder") || "Search categories..."}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10 text-right"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    setPage(1);
-                    load();
-                  }
-                }}
-              />
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setPage(1);
-                load();
-              }}
-            >
-              {t("app.actions.search") || "Search"}
-            </Button>
-            <Badge variant="outline">
-              {t("app.table.total") || "Total"}: {total}
-            </Badge>
           </div>
         </CardContent>
       </Card>
 
-      {/* Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {t("categories.titleList") || "Categories"} ({items.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="w-full overflow-x-auto">
-          <Table className="min-w-[820px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("categories.image") || "Image"}</TableHead>
-                <TableHead>{t("categories.name") || "Name"}</TableHead>
-                <TableHead>{t("categories.slug") || "Slug"}</TableHead>
-                <TableHead>{t("categories.parent") || "Parent"}</TableHead>
-                <TableHead>{t("categories.sortOrder") || "Sort"}</TableHead>
-                <TableHead>{t("categories.active") || "Active"}</TableHead>
-                <TableHead className="text-right">{t("app.actions.title") || "Actions"}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.length ? (
-                items.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell>
-                      <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center">
-                        {c.imageUrl ? (
-                          <ImageWithFallback
-                            src={c.imageUrl}
-                            alt={c.name}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <ImageIcon className="w-5 h-5 text-gray-400" />
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-medium">{c.name}</TableCell>
-                    <TableCell className="text-gray-600">{c.slug}</TableCell>
-                    <TableCell>
-                      {c.parentId ? (
-                        <Badge variant="secondary">{nameById.get(c.parentId) || c.parentId}</Badge>
-                      ) : (
-                        <span className="text-gray-500">
-                          {t("categories.root") || "Root Category"}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{c.sortOrder ?? 0}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={c.isActive ? "default" : "secondary"}
-                        className={c.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"}
-                      >
-                        {c.isActive ? (t("app.active") || "active") : (t("app.inactive") || "inactive")}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center gap-1 justify-end">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>
-                          <Edit className="w-4 h-4" />
-                        </Button>
-
-                        {isAdmin && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                {t("categories.deleteTitle") || "Delete Category"}
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                {t("categories.deleteConfirm") ||
-                                  `Are you sure you want to delete "${c.name}"? This action cannot be undone.`}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>
-                                {t("app.actions.cancel") || "Cancel"}
-                              </AlertDialogCancel>
-                              <AlertDialogAction
-                                className="bg-red-600 hover:bg-red-700"
-                                onClick={async () => {
-                                  try {
-                                    await deleteCategory(c.id);
-                                    toast.success(t("categories.deleted") || "Category deleted");
-                                    load();
-                                  } catch (e: any) {
-                                    toast.error(String(e?.response?.data?.message || e?.message || "Delete failed"));
-                                  }
-                                }}
-                              >
-                                {t("app.actions.delete") || "Delete"}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-gray-500">
-                    {t("app.table.noData") || "No data"}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-          </div>
-
-          {/* Pagination */}
-          <div className="flex items-center gap-3 justify-end mt-4">
-            <Button
-              variant="outline"
-              disabled={page === 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              {t("app.actions.prev") || "Prev"}
-            </Button>
-            <span className="text-sm text-gray-600">
-              {t("app.table.page") || "Page"} {page} {t("app.table.of") || "of"}{" "}
-              {Math.max(1, Math.ceil(total / pageSize))}
-            </span>
-            <Button
-              variant="outline"
-              disabled={page * pageSize >= total}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              {t("app.actions.next") || "Next"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Edit Modal */}
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="max-w-md" aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle>{t("app.actions.edit") || "Edit Category"}</DialogTitle>
-          </DialogHeader>
-
-          {error && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">
-              {String(error)}
-            </div>
-          )}
-
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-name">{t("categories.name") || "Category Name"}</Label>
-              <Input
-                id="edit-name"
-                value={form.name}
-                onChange={(e) => updateName(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-nameAr">{t("categories.nameAr", "Arabic Name")}</Label>
-              <Input
-                id="edit-nameAr"
-                value={form.nameAr || ""}
-                onChange={(e) => setForm({ ...form, nameAr: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-slug">{t("categories.slug") || "Slug"}</Label>
-              <Input
-                id="edit-slug"
-                value={form.slug}
-                onChange={(e) => setForm({ ...form, slug: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-parent">{t("categories.parent") || "Parent Category"}</Label>
-              <Select
-                value={form.parentId || "none"}
-                onValueChange={(value) =>
-                  setForm({ ...form, parentId: value === "none" ? "" : value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={t("categories.parent") || "Select parent"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">
-                    {t("categories.root") || "None (Root Category)"}
-                  </SelectItem>
-                  {parentCandidates.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-imageFile">{t("categories.image") || "Image"}</Label>
-              <Input
-                id="edit-imageFile"
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={(e: any) => {
-                  const file = e.target?.files?.[0] || null;
-                  const fixed = file ? normalizeImageFileType(file) : null;
-                  if (fixed && fixed.size > MAX_FILE_MB * 1024 * 1024) {
-                    toast.error(`${MAX_FILE_MB}MB ${t("products.upload.too_large", "File too large")}`);
-                    return;
-                  }
-                  setForm({ ...form, imageFile: fixed });
-                }}
-              />
-              {(form.imageFile || form.imageUrl) && (
-                <div className="w-24 h-24 rounded-lg overflow-hidden bg-gray-100">
-                  {form.imageFile ? (
-                    <img src={previewUrl || undefined} alt="preview" className="w-full h-full object-cover" />
-                  ) : (
-                    <img
-                      src={form.imageUrl}
-                      alt="preview"
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="edit-sortOrder">{t("categories.sortOrder") || "Sort Order"}</Label>
-                <Input
-                  id="edit-sortOrder"
-                  type="number"
-                  min={0}
-                  value={form.sortOrder}
-                  onChange={(e) => {
-                    const v = Math.max(0, Math.trunc(Number(e.target.value || 0)));
-                    setForm({ ...form, sortOrder: v });
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t("categories.active") || "Active"}</Label>
-                <Select
-                  value={form.isActive ? "true" : "false"}
-                  onValueChange={(v) => setForm({ ...form, isActive: v === "true" })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="true">{t("app.yes") || "Yes"}</SelectItem>
-                    <SelectItem value="false">{t("app.no") || "No"}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-4">
-              <Button onClick={saveCreateOrUpdate} className="flex-1" disabled={saving}>
-                {saving ? t("auth.signing_in") || "Saving..." : t("app.actions.update") || "Update"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setIsEditOpen(false)}
-                className="flex-1"
-                disabled={saving}
-              >
-                {t("app.actions.cancel") || "Cancel"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <CategoryFormDialog
+        open={!!dialogState}
+        onOpenChange={(open) => !open && setDialogState(null)}
+        mode={dialogState?.mode || "create"}
+        category={dialogState?.category}
+        parents={parents}
+        loading={saveMutation.isPending}
+        onSubmit={(values, imageFile) => saveMutation.mutate({ id: dialogState?.category?.id, values, imageFile })}
+      />
     </div>
   );
 }
 
+function CategoryFormDialog({ open, onOpenChange, mode, category, parents, loading, onSubmit }: CategoryFormDialogProps) {
+  const { t } = useTranslation();
+  const form = useForm<CategoryFormValues>({
+    resolver: zodResolver(categoryFormSchema) as Resolver<CategoryFormValues>,
+    defaultValues: mapCategoryToForm(category),
+  });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const slugTouched = useRef(false);
 
+  useEffect(() => {
+    form.reset(mapCategoryToForm(category));
+    setImageFile(null);
+    slugTouched.current = false;
+  }, [category, form]);
+
+  useEffect(() => {
+    if (!imageFile) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(imageFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
+
+  const nameValue = form.watch("name");
+  useEffect(() => {
+    if (slugTouched.current) return;
+    if (!nameValue.trim()) return;
+    form.setValue("slug", slugify(nameValue));
+  }, [nameValue, form]);
+
+  const submit = form.handleSubmit((values: CategoryFormValues) => onSubmit(values, imageFile));
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>
+            {mode === "edit" ? t("categories.edit", "Edit category") : t("categories.addNew", "Add category")}
+          </DialogTitle>
+          <DialogDescription>{t("categories.form_subtitle", "Provide multilingual names and set display order")}</DialogDescription>
+        </DialogHeader>
+        <form className="space-y-4" onSubmit={submit}>
+          <div>
+            <Label>{t("categories.name")}</Label>
+            <Input {...form.register("name")} placeholder={t("categories.name") || ""} />
+            {form.formState.errors.name && <p className="text-xs text-rose-600 mt-1">{form.formState.errors.name.message}</p>}
+          </div>
+          <div>
+            <Label>{t("categories.nameAr", "Arabic Name")}</Label>
+            <Input {...form.register("nameAr")} placeholder={t("categories.nameAr") || ""} />
+          </div>
+          <div>
+            <Label>{t("categories.slug")}</Label>
+            <Input
+              {...form.register("slug")}
+              onFocus={() => (slugTouched.current = true)}
+              onChange={(event) => {
+                slugTouched.current = true;
+                form.setValue("slug", slugify(event.target.value));
+              }}
+              placeholder="fresh-fruits"
+            />
+            {form.formState.errors.slug && <p className="text-xs text-rose-600 mt-1">{form.formState.errors.slug.message}</p>}
+          </div>
+          <div>
+            <Label>{t("categories.parent")}</Label>
+            <select
+              className="w-full border rounded-md h-10 px-3 text-sm"
+              value={form.watch("parentId") || ""}
+              onChange={(event) => form.setValue("parentId", event.target.value)}
+            >
+              <option value="">{t("categories.root", "Root")}</option>
+              {parents.map((parent) => (
+                <option key={parent.id} value={parent.id}>
+                  {parent.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label>{t("categories.sortOrder")}</Label>
+              <Input
+                inputMode="numeric"
+                {...form.register("sortOrder")}
+                onChange={(event) => form.setValue("sortOrder", normalizeDigits(event.target.value).replace(/[^0-9]/g, ""))}
+                placeholder="0"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Label>{t("categories.active")}</Label>
+              <Switch checked={form.watch("isActive")} onCheckedChange={(checked) => form.setValue("isActive", checked)} />
+            </div>
+          </div>
+          <div>
+            <Label>{t("categories.image", "Image")}</Label>
+            <CategoryImageInput
+              value={previewUrl || form.watch("imageUrl")}
+              onUrlChange={(url) => form.setValue("imageUrl", url)}
+              onFileSelected={(file) => setImageFile(file)}
+            />
+          </div>
+          <div className="flex gap-3 justify-end">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
+              {t("app.actions.cancel")}
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? t("app.loading", "Saving...") : t("app.actions.save", "Save")}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type CategoryImageInputProps = {
+  value?: string | null;
+  onUrlChange: (url: string) => void;
+  onFileSelected: (file: File | null) => void;
+};
+
+function CategoryImageInput({ value, onUrlChange, onFileSelected }: CategoryImageInputProps) {
+  const { t } = useTranslation();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const displayValue = value?.startsWith("blob:") ? "" : value || "";
+
+  const handleFile = (file: File | null) => {
+    if (!file) {
+      onFileSelected(null);
+      return;
+    }
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      toast.error(t("products.upload.too_large", "File too large"));
+      return;
+    }
+    onUrlChange("");
+    onFileSelected(file);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div
+        className="border-2 border-dashed rounded-lg p-4 text-center text-sm text-muted-foreground"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          const file = event.dataTransfer.files?.[0];
+          if (file) {
+            handleFile(file);
+            return;
+          }
+          const url = event.dataTransfer.getData("text/uri-list") || event.dataTransfer.getData("text/plain");
+          if (url.trim()) onUrlChange(url.trim());
+        }}
+      >
+        {value ? (
+          <div className="w-28 h-28 mx-auto rounded-md overflow-hidden bg-muted">
+            <ImageWithFallback src={value} alt="category" className="w-full h-full object-cover" />
+          </div>
+        ) : (
+          <div className="w-12 h-12 mx-auto rounded-full bg-muted flex items-center justify-center">
+            <ImageIcon className="w-5 h-5 text-muted-foreground" />
+          </div>
+        )}
+        <p className="mt-3 text-xs">{t("categories.image_hint", "Drop an image or paste a URL")}</p>
+        <div className="flex justify-center gap-2 mt-2">
+          <Button type="button" size="sm" variant="outline" onClick={() => inputRef.current?.click()}>
+            {t("app.actions.upload")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              onUrlChange("");
+              onFileSelected(null);
+            }}
+          >
+            {t("app.actions.clear", "Clear")}
+          </Button>
+        </div>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(event) => handleFile(event.target.files?.[0] || null)}
+        />
+      </div>
+      <Input
+        value={displayValue}
+        onChange={(event) => onUrlChange(event.target.value)}
+        placeholder="https://cdn.fasket.com/category.jpg"
+      />
+    </div>
+  );
+}

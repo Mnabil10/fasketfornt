@@ -1,12 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  listCustomers,
-  getCustomer,
-  setCustomerRole,
-  resetCustomerPassword,
-  Customer,
-} from "../../../services/customers.service";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getCustomer, setCustomerRole, resetCustomerPassword, Customer } from "../../../services/customers.service";
 import { fmtEGP } from "../../../lib/money";
 
 // shadcn/ui
@@ -20,6 +15,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../ui/tabs";
 import { Separator } from "../../ui/separator";
 import { toast } from "sonner";
 import { useAuth } from "../../../auth/AuthProvider";
+import { useCustomersAdmin, CUSTOMERS_QUERY_KEY } from "../../../hooks/api/useCustomersAdmin";
+import { getApiErrorMessage } from "../../../lib/errors";
+import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
+import { EmptyState } from "../../admin/common/EmptyState";
+import { ErrorState } from "../../admin/common/ErrorState";
 
 // Icons
 import { Search, Eye, Phone, Mail, MapPin, Calendar, Users } from "lucide-react";
@@ -38,48 +38,66 @@ type CustomerDetail = {
 export function CustomersManagement() {
   const { t } = useTranslation();
   const { isAdmin, isStaff } = useAuth();
+  const queryClient = useQueryClient();
 
   // filters & pagination (kept logic)
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
-  // data
-  const [items, setItems] = useState<Customer[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const customersQuery = useCustomersAdmin(
+    {
+      q: q.trim() || undefined,
+      page,
+      pageSize,
+    },
+    { enabled: true }
+  );
+  const items = customersQuery.data?.items ?? [];
+  const total = customersQuery.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // detail
   const [selected, setSelected] = useState<CustomerDetail | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const [pwd, setPwd] = useState("");
   const [pwd2, setPwd2] = useState("");
-  const [pwdLoading, setPwdLoading] = useState(false);
-  async function load() {
-    setLoading(true);
-    try {
-      const res = await listCustomers({ q, page, pageSize });
-      setItems(res.items);
-      setTotal(res.total);
-    } finally {
-      setLoading(false);
-    }
-  }
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, page]);
+
+  const updateRoleMutation = useMutation({
+    mutationFn: ({ id, role }: { id: string; role: "CUSTOMER" | "ADMIN" | "STAFF" }) => setCustomerRole(id, role),
+    onSuccess: async (_data, variables) => {
+      toast.success(t("customers.roleUpdated", "Role updated"));
+      await queryClient.invalidateQueries({ queryKey: CUSTOMERS_QUERY_KEY });
+      try {
+        const detail = (await getCustomer(variables.id)) as CustomerDetail;
+        setSelected(detail);
+      } catch {
+        // ignore detail reload errors
+      }
+    },
+    onError: (error) =>
+      toast.error(getApiErrorMessage(error, t("customers.roleUpdateFailed", "Unable to update role"))),
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) => resetCustomerPassword(id, password),
+    onSuccess: () => {
+      toast.success(t("customers.passwordReset", "Password reset"));
+      setResetOpen(false);
+      setPwd("");
+      setPwd2("");
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, t("customers.resetFailed", "Unable to reset password"))),
+  });
 
   async function open(id: string) {
     const detail = (await getCustomer(id)) as CustomerDetail;
     setSelected(detail);
   }
 
-  async function changeRole(role: 'CUSTOMER' | 'ADMIN' | 'STAFF') {
+  async function changeRole(role: "CUSTOMER" | "ADMIN" | "STAFF") {
     if (!selected) return;
-    await setCustomerRole(selected.id, role);
-    const detail = (await getCustomer(selected.id)) as CustomerDetail;
-    setSelected(detail);
+    await updateRoleMutation.mutateAsync({ id: selected.id, role });
   }
 
   // simple stats from current page (no extra API)
@@ -172,7 +190,14 @@ export function CustomersManagement() {
                 }}
               />
             </div>
-            <Button variant="outline" onClick={() => setPage(1)} disabled={loading}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPage(1);
+                customersQuery.refetch();
+              }}
+              disabled={customersQuery.isFetching}
+            >
               {t("app.actions.search")}
             </Button>
           </div>
@@ -183,31 +208,46 @@ export function CustomersManagement() {
       <Card>
         <CardHeader>
           <CardTitle>
-            {t("customers.title")} ({items.length})
+            {t("customers.title")} ({total})
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <Table className="min-w-[760px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("customers.name")}</TableHead>
-                  <TableHead>{t("customers.phone")}</TableHead>
-                  <TableHead>{t("customers.email")}</TableHead>
-                  <TableHead>{t("customers.createdAt")}</TableHead>
-                  <TableHead className="text-right">{t("app.actions.title") || "Actions"}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.length ? (
-                  items.map((c) => (
+            {customersQuery.isLoading ? (
+              <AdminTableSkeleton rows={5} columns={5} />
+            ) : customersQuery.isError ? (
+              <ErrorState
+                message={t("customers.loadError") || "Unable to load customers"}
+                onRetry={() => customersQuery.refetch()}
+              />
+            ) : items.length === 0 ? (
+              <EmptyState
+                title={t("customers.emptyTitle") || "No customers yet"}
+                description={t("customers.emptyDescription") || "Invite users or adjust filters."}
+                action={
+                  <Button size="sm" variant="outline" onClick={() => customersQuery.refetch()}>
+                    {t("app.actions.retry")}
+                  </Button>
+                }
+              />
+            ) : (
+              <Table className="min-w-[760px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("customers.name")}</TableHead>
+                    <TableHead>{t("customers.phone")}</TableHead>
+                    <TableHead>{t("customers.email")}</TableHead>
+                    <TableHead>{t("customers.createdAt")}</TableHead>
+                    <TableHead className="text-right">{t("app.actions.title") || "Actions"}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((c) => (
                     <TableRow key={c.id}>
                       <TableCell>
                         <div className="flex items-center space-x-3">
                           <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
-                            <span className="text-white font-medium text-sm">
-                              {initials(c.name)}
-                            </span>
+                            <span className="text-white font-medium text-sm">{initials(c.name)}</span>
                           </div>
                           <div>
                             <p className="font-medium">{c.name}</p>
@@ -229,9 +269,7 @@ export function CustomersManagement() {
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">
-                          {c.createdAt
-                            ? new Date(c.createdAt).toLocaleDateString("ar-EG")
-                            : "-"}
+                          {c.createdAt ? new Date(c.createdAt).toLocaleDateString("ar-EG") : "-"}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -240,16 +278,10 @@ export function CustomersManagement() {
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center text-gray-500">
-                      {t("app.table.noData")}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </div>
 
           {/* Pagination */}
@@ -262,12 +294,11 @@ export function CustomersManagement() {
               {t("app.actions.prev")}
             </Button>
             <span className="text-sm text-gray-600">
-              {t("app.table.page")} {page} {t("app.table.of")}{" "}
-              {Math.max(1, Math.ceil(total / pageSize))}
+              {t("app.table.page")} {page} {t("app.table.of")} {totalPages}
             </span>
             <Button
               variant="outline"
-              disabled={page * pageSize >= total}
+              disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
             >
               {t("app.actions.next")}
@@ -464,7 +495,7 @@ export function CustomersManagement() {
             <div className="flex gap-2 pt-2">
               <Button
                 className="flex-1"
-                disabled={pwdLoading || !selected}
+                disabled={resetPasswordMutation.isPending || !selected}
                 onClick={async () => {
                   if (!selected) return;
                   if ((pwd || "").length < 6) {
@@ -475,23 +506,20 @@ export function CustomersManagement() {
                     toast.error(t("passwordMismatch", "Passwords do not match"));
                     return;
                   }
-                  try {
-                    setPwdLoading(true);
-                    await resetCustomerPassword(selected.id, pwd);
-                    toast.success(t("passwordUpdated", "Password updated"));
-                    setPwd("");
-                    setPwd2("");
-                    setResetOpen(false);
-                  } catch (e: any) {
-                    toast.error(String(e?.response?.data?.message || e?.message || "Failed to reset password"));
-                  } finally {
-                    setPwdLoading(false);
-                  }
+                  if (!selected.id) return;
+                  await resetPasswordMutation.mutateAsync({ id: selected.id, password: pwd });
                 }}
               >
-                {pwdLoading ? t("app.loading", "Loading...") : (t("resetPassword", "Reset Password"))}
+                {resetPasswordMutation.isPending
+                  ? t("app.loading", "Loading...")
+                  : t("resetPassword", "Reset Password")}
               </Button>
-              <Button variant="outline" className="flex-1" onClick={() => setResetOpen(false)} disabled={pwdLoading}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setResetOpen(false)}
+                disabled={resetPasswordMutation.isPending}
+              >
                 {t("app.actions.cancel", "Cancel")}
               </Button>
             </div>

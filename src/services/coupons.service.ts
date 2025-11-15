@@ -17,7 +17,7 @@ export type Coupon = {
 export type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 
 export async function listCoupons(params?: { q?: string; page?: number; pageSize?: number }) {
-  const { data } = await api.get<Paged<Coupon>>("/api/v1/admin/coupons", { params: { ...params, _ts: Date.now() } });
+  const { data } = await api.get<Paged<Coupon>>("/api/v1/admin/coupons", { params });
   return data;
 }
 

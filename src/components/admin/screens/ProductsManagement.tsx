@@ -1,18 +1,20 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useForm, Controller, type Resolver } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  listProducts,
   createProduct,
   updateProduct,
   deleteProduct,
   getProduct,
-  Product,
+  type Product,
+  downloadProductsBulkTemplate,
+  uploadProductsBulk,
 } from "../../../services/products.service";
-import { listCategories } from "../../../services/categories.service";
+import { type Category } from "../../../services/categories.service";
 import { toCents, fromCents } from "../../../lib/money";
-// Direct uploads disabled; use multipart on save
-
-// === UI ===
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";
@@ -23,9 +25,9 @@ import { Textarea } from "../../ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "../../ui/dialog";
 import {
   Select,
@@ -34,15 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../ui/select";
-// Tabs removed from product form (single section)
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../../ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../ui/table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,1069 +53,1454 @@ import {
   Search as SearchIcon,
   Edit,
   Trash2,
+  Filter,
+  Upload,
+  Download,
+  Flame,
   DollarSign,
   Package,
-  TrendingUp,
-  TrendingDown,
+  ArrowUpDown,
+  Image as ImageIcon,
   AlertTriangle,
 } from "lucide-react";
 import { ImageWithFallback } from "../../figma/ImageWithFallback";
 import { toast } from "sonner";
 import { useAuth } from "../../../auth/AuthProvider";
+import { useDebounce } from "../../../hooks/useDebounce";
+import { useProductsAdmin, PRODUCTS_QUERY_KEY } from "../../../hooks/api/useProductsAdmin";
+import { useCategoriesAdmin } from "../../../hooks/api/useCategoriesAdmin";
+import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
+import { EmptyState } from "../../admin/common/EmptyState";
+import { ErrorState } from "../../admin/common/ErrorState";
+import { getApiErrorMessage } from "../../../lib/errors";
+import type { ScreenProps } from "../../admin/AdminDashboard";
 
+const MAX_FILE_MB = 10;
+const PAGE_SIZE_OPTIONS = [10, 20, 50];
+const DEFAULT_PAGE_SIZE = 20;
+
+const productFormSchema = z.object({
+  name: z.string().min(2, "Name is required"),
+  nameAr: z.string().optional(),
+  slug: z
+    .string()
+    .min(2, "Slug is required")
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use lowercase letters, numbers, and hyphen only"),
+  description: z.string().optional(),
+  descriptionAr: z.string().optional(),
+  categoryId: z.string().min(1, "Select a category"),
+  price: z.string().min(1, "Price is required"),
+  salePrice: z.string().optional(),
+  stock: z.string().min(1, "Stock is required"),
+  status: z.enum(["DRAFT", "ACTIVE", "HIDDEN", "DISCONTINUED"]),
+  isHotOffer: z.boolean().default(false),
+  images: z.array(z.string().min(1)).default([]),
+  mainImage: z.string().optional(),
+});
+
+type ProductFormValues = z.infer<typeof productFormSchema>;
+type DrawerState = { mode: "create" | "edit"; product?: Product } | null;
 type StatusFilter = Product["status"] | "all";
+type StockFilter = "all" | "in" | "out" | "low";
+type SortField = "createdAt" | "priceCents" | "name" | "stock";
 
-type FormState = {
-  name: string;
-  nameAr?: string;
-  slug: string;
-  description: string;
-  descriptionAr?: string;
-  imageUrl: string;
-  images: string; // comma-separated
-  imageFile?: File | null;
-  price: string;
-  salePrice: string;
-  stock: string;
-  status: Product["status"];
+type FilterState = {
+  status: StatusFilter;
   categoryId: string;
-  isHotOffer?: boolean;
+  stock: StockFilter;
+  onlyHot: boolean;
+  minPrice?: number;
+  maxPrice?: number;
+  page: number;
+  pageSize: number;
+  sortField: SortField;
+  sortDirection: "asc" | "desc";
 };
 
-export function ProductsManagement(props?: any) {
-  const { t } = useTranslation();
-  const { isAdmin } = useAuth();
+const defaultFilters: FilterState = {
+  status: "all",
+  categoryId: "all",
+  stock: "all",
+  onlyHot: false,
+  page: 1,
+  pageSize: DEFAULT_PAGE_SIZE,
+  sortField: "createdAt",
+  sortDirection: "desc",
+};
 
-  // table state
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const pageSize = 20;
-  const [items, setItems] = useState<Product[]>([]);
-  const [total, setTotal] = useState(0);
+type BulkRowStatus = { row: number | string; status: "success" | "failed"; message?: string; name?: string };
+type BulkUploadResult = {
+  created: number;
+  updated: number;
+  rows?: BulkRowStatus[];
+  errors?: { row: number | string; message: string; name?: string }[];
+};
 
-  // server-side filters
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+const statusStyles: Record<Product["status"], string> = {
+  ACTIVE: "bg-emerald-100 text-emerald-700",
+  DRAFT: "bg-slate-200 text-slate-700",
+  HIDDEN: "bg-gray-200 text-gray-700",
+  DISCONTINUED: "bg-red-100 text-red-700",
+};
 
-  // categories for select
-  const [cats, setCats] = useState<{ id: string; name: string }[]>([]);
+const stockBadge = {
+  ok: "bg-emerald-100 text-emerald-700",
+  low: "bg-amber-100 text-amber-700",
+  out: "bg-rose-100 text-rose-700",
+};
 
-  // modals & form
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editing, setEditing] = useState<Partial<Product> | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Tabs removed (keep no-op state eliminated)
+function normalizeDigits(input: string) {
+  return (input || "")
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+}
 
-  // uploads removed (S3 direct upload disabled)
-  const uploading = false;
-  const uploadProgress: number | null = null;
+function sanitizeCurrencyInput(value: string) {
+  const normalized = normalizeDigits(value);
+  const stripped = normalized.replace(/[^0-9.,]/g, "").replace(/,/g, ".");
+  const [integer, fraction] = stripped.split(".");
+  if (!fraction) return integer || "";
+  return `${integer || "0"}.${fraction.slice(0, 2)}`;
+}
 
-  // form model (strings for numeric fields to avoid freeze)
-  const [form, setForm] = useState<FormState>({
-    name: "",
-    nameAr: "",
-    slug: "",
-    description: "",
-    descriptionAr: "",
-    imageUrl: "",
-    images: "",
-    imageFile: null,
-    price: "",
-    salePrice: "",
-    stock: "",
-    status: "ACTIVE",
-    categoryId: "",
-    isHotOffer: false,
-  });
+function parseCurrency(value: string) {
+  const sanitized = sanitizeCurrencyInput(value);
+  if (!sanitized) return NaN;
+  return Number.parseFloat(sanitized);
+}
 
-  // helpers
-  function toSlug(str: string) {
-    const arabicMap: Record<string, string> = {
-      "٠": "0",
-      "١": "1",
-      "٢": "2",
-      "٣": "3",
-      "٤": "4",
-      "٥": "5",
-      "٦": "6",
-      "٧": "7",
-      "٨": "8",
-      "٩": "9",
-    };
-    const normalized = (str || "")
-      .trim()
-      .toLowerCase()
-      .replace(/[\u0660-\u0669]/g, (d) => arabicMap[d] ?? d);
-    return normalized
-      .replace(/[^\w\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-");
-  }
+function sanitizeIntegerInput(value: string) {
+  const normalized = normalizeDigits(value);
+  return normalized.replace(/[^0-9]/g, "");
+}
 
-  // improved slug + validations
-  function normalizeDigits(s: string) {
-    return (s || "")
-      .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
-      .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
-  }
-  function parseNumberInput(raw: string): number {
-    const s = normalizeDigits(raw || "").trim();
-    // Replace Arabic decimal comma with dot, drop non-numeric except dot and minus
-    const canonical = s.replace(/،/g, ",").replace(/,/g, ".").replace(/[^0-9.\-]/g, "");
-    const n = parseFloat(canonical);
-    return Number.isFinite(n) ? n : NaN;
-  }
-  function slugify(str: string) {
-    const normalized = normalizeDigits((str || "").trim().toLowerCase());
-    return normalized
-      .replace(/[^a-z0-9\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-")
-      .slice(0, 64);
-  }
-  const MAX_PRICE = 1_000_000;
-  const MAX_STOCK = 1_000_000;
-  const allowedImageTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-  const MAX_FILE_MB = 10;
-  function normalizeImageFileType(file: File): File {
-    const type = (file.type || "").toLowerCase();
-    let target = type;
-    if (type === "image/x-png") target = "image/png";
-    if (type === "image/jpg" || type === "image/pjpeg") target = "image/jpeg";
-    if (!target) {
-      const lower = file.name.toLowerCase();
-      if (lower.endsWith(".png")) target = "image/png";
-      else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".jfif")) target = "image/jpeg";
-      else if (lower.endsWith(".webp")) target = "image/webp";
-    }
-    if (target && target !== type) {
-      return new File([file], file.name, { type: target });
-    }
-    return file;
-  }
-  function isValidSlug(s: string) {
-    return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s) && s.length <= 64;
-  }
-  function isValidUrl(u: string) {
-    try { const x = new URL(u); return x.protocol === "http:" || x.protocol === "https:"; } catch { return false; }
-  }
+function slugify(value: string) {
+  return normalizeDigits(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 64);
+}
 
-  function updateName(next: string) {
-    setForm((prev) => ({
-      ...prev,
-      name: next,
-      slug: prev.slug ? prev.slug : slugify(next),
-    }));
-  }
-
-  // load products (SERVER-SIDE filters)
-  async function load() {
-    const res = await listProducts({
-      q: search || undefined,
-      categoryId: categoryFilter !== "all" ? categoryFilter : undefined,
-      status: statusFilter !== "all" ? (statusFilter as Product["status"]) : undefined,
-      page,
-      pageSize,
-      orderBy: "createdAt",
-      sort: "desc",
-    });
-    setItems(res.items);
-    setTotal(res.total);
-  }
-
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, page, statusFilter, categoryFilter]);
-
-  useEffect(() => {
-    (async () => {
-      const c = await listCategories({ pageSize: 100 });
-      setCats(c.items.map((i: any) => ({ id: i.id, name: i.name })));
-    })();
-  }, []);
-
-  // UI helpers
-  function getStockStatus(stock: number) {
-    if (stock === 0)
-      return {
-        label: t("products.stockStatuses.out", "غير متوفر"),
-        color: "bg-red-100 text-red-700",
-      };
-    if (stock < 10)
-      return {
-        label: t("products.stockStatuses.low", "نقص المخزون"),
-        color: "bg-yellow-100 text-yellow-700",
-      };
+function mapProductToForm(product?: Product): ProductFormValues {
+  if (!product) {
     return {
-      label: t("products.stockStatuses.in", "متوفر"),
-        color: "bg-green-100 text-green-700",
-      };
-  }
-
-  // image list helpers
-  function appendImageUrl(url: string) {
-    setForm((prev) => {
-      const items = (prev.images ? prev.images.split(",") : [])
-        .map((s) => s.trim())
-        .filter(Boolean);
-      if (!items.includes(url)) items.push(url);
-      return { ...prev, images: items.join(",") };
-    });
-  }
-  function setMainImage(url: string) {
-    setForm((prev) => ({ ...prev, imageUrl: url }));
-  }
-
-  // create/edit openers
-  function openCreate() {
-    setEditing(null);
-    setError(null);
-    setForm({
       name: "",
       nameAr: "",
       slug: "",
       description: "",
       descriptionAr: "",
-      imageUrl: "",
-      images: "",
-      imageFile: null,
+      categoryId: "",
       price: "",
       salePrice: "",
       stock: "",
       status: "ACTIVE",
-      categoryId: "",
       isHotOffer: false,
-    });
-    setIsAddModalOpen(true);
+      images: [],
+      mainImage: "",
+    };
   }
+  return {
+    name: product.name,
+    nameAr: product.nameAr || "",
+    slug: product.slug,
+    description: product.description || "",
+    descriptionAr: product.descriptionAr || "",
+    categoryId: product.categoryId,
+    price: fromCents(product.priceCents).toString(),
+    salePrice: product.salePriceCents ? fromCents(product.salePriceCents).toString() : "",
+    stock: product.stock.toString(),
+    status: product.status,
+    isHotOffer: !!product.isHotOffer,
+    images: product.images?.filter(Boolean) || [],
+    mainImage: product.imageUrl || product.images?.[0] || "",
+  };
+}
 
-  function openEdit(p: Product) {
-    setEditing(p);
-    setForm({
-      name: p.name,
-      nameAr: p.nameAr || "",
-      slug: p.slug,
-      description: p.description || "",
-      descriptionAr: p.descriptionAr || "",
-      imageUrl: p.imageUrl || "",
-      images: (p.images || []).join(","),
-      imageFile: null,
-      price: fromCents(p.priceCents).toString(),
-      salePrice: p.salePriceCents ? fromCents(p.salePriceCents).toString() : "",
-      stock: p.stock.toString(),
-      status: p.status,
-      categoryId: p.categoryId,
-      isHotOffer: !!p.isHotOffer,
-    });
-    setError(null);
-    setIsEditModalOpen(true);
+function formatPrice(cents: number, locale: string) {
+  try {
+    return new Intl.NumberFormat(locale === "ar" ? "ar-EG" : "en-EG", {
+      style: "currency",
+      currency: "EGP",
+      minimumFractionDigits: 2,
+    }).format(fromCents(cents));
+  } catch {
+    return `EGP ${fromCents(cents).toFixed(2)}`;
   }
+}
 
-  // Deep-link from header notifications: open specific product by id
+function formatDate(value?: string, locale?: string) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  return date.toLocaleDateString(locale === "ar" ? "ar-EG" : undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+const statusFilterOptions: Array<{ value: StatusFilter; label: string }> = [
+  { value: "all", label: "common.all" },
+  { value: "ACTIVE", label: "products.statuses.ACTIVE" },
+  { value: "DRAFT", label: "products.statuses.DRAFT" },
+  { value: "HIDDEN", label: "products.statuses.HIDDEN" },
+  { value: "DISCONTINUED", label: "products.statuses.DISCONTINUED" },
+];
+
+const stockFilterOptions: Array<{ value: StockFilter; label: string }> = [
+  { value: "all", label: "products.stockFilters.all" },
+  { value: "in", label: "products.stockFilters.in" },
+  { value: "out", label: "products.stockFilters.out" },
+  { value: "low", label: "products.stockFilters.low" },
+];
+
+const sortFieldLabels: Record<SortField, string> = {
+  createdAt: "products.sort.createdAt",
+  priceCents: "products.sort.price",
+  name: "products.sort.name",
+  stock: "products.sort.stock",
+};
+
+const sortDirections: Record<"asc" | "desc", string> = {
+  asc: "products.sort.asc",
+  desc: "products.sort.desc",
+};
+
+function buildFilterChips(
+  t: ReturnType<typeof useTranslation>["t"],
+  filters: FilterState,
+  search: string,
+  categoryLabel?: string
+) {
+  const chips: Array<{ label: string; onClear?: () => void }> = [];
+  if (search.trim()) chips.push({ label: `${t("common.search")}: ${search.trim()}` });
+  if (filters.status !== "all") chips.push({ label: t(`products.statuses.${filters.status}`) });
+  if (filters.categoryId !== "all") chips.push({ label: categoryLabel || t("products.category_selected") });
+  if (filters.stock !== "all") chips.push({ label: t(`products.stockFilters.${filters.stock}`) });
+  if (filters.onlyHot) chips.push({ label: t("products.hotOffer") });
+  if (filters.minPrice) chips.push({ label: `${t("products.minPrice")}: ${filters.minPrice}` });
+  if (filters.maxPrice) chips.push({ label: `${t("products.maxPrice")}: ${filters.maxPrice}` });
+  return chips;
+}
+
+function stockClass(stock: number) {
+  if (stock === 0) return stockBadge.out;
+  if (stock > 0 && stock <= 10) return stockBadge.low;
+  return stockBadge.ok;
+}
+
+function calcDiscount(price: string, salePrice: string) {
+  const base = parseCurrency(price);
+  const sale = parseCurrency(salePrice);
+  if (!Number.isFinite(base) || !Number.isFinite(sale) || !base || !sale) return null;
+  if (sale >= base) return null;
+  return Math.round((1 - sale / base) * 100);
+}
+
+export function ProductsManagement(props?: Partial<ScreenProps>) {
+  const { adminState, updateAdminState } = props || {};
+  const { t, i18n } = useTranslation();
+  const { isAdmin } = useAuth();
+  const queryClient = useQueryClient();
+
+  const [filters, setFilters] = useState<FilterState>(defaultFilters);
+  const [searchInput, setSearchInput] = useState("");
+  const debouncedSearch = useDebounce(searchInput, 400);
+  const [drawerState, setDrawerState] = useState<DrawerState>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+
+  const categoriesQuery = useCategoriesAdmin({ pageSize: 200 }, { enabled: true });
+
+  const apiFilters = useMemo(() => {
+    const q = debouncedSearch.trim();
+    return {
+      q: q || undefined,
+      categoryId: filters.categoryId !== "all" ? filters.categoryId : undefined,
+      status: filters.status !== "all" ? (filters.status as Product["status"]) : undefined,
+      minPriceCents: filters.minPrice ? toCents(filters.minPrice) : undefined,
+      maxPriceCents: filters.maxPrice ? toCents(filters.maxPrice) : undefined,
+      inStock:
+        filters.stock === "all"
+          ? undefined
+          : filters.stock === "in"
+          ? true
+          : filters.stock === "out"
+          ? false
+          : undefined,
+      isHotOffer: filters.onlyHot || undefined,
+      orderBy: filters.sortField,
+      sortDirection: filters.sortDirection,
+      page: filters.page,
+      pageSize: filters.pageSize,
+    };
+  }, [filters, debouncedSearch]);
+
+  const productsQuery = useProductsAdmin(apiFilters);
+
+  const categoryLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    (categoriesQuery.data?.items || []).forEach((category) => map.set(category.id, category.name));
+    return map;
+  }, [categoriesQuery.data?.items]);
+
+  const tableItems = useMemo(() => {
+    const data = productsQuery.data?.items || [];
+    if (filters.stock !== "low") return data;
+    return data.filter((item) => item.stock > 0 && item.stock <= 10);
+  }, [productsQuery.data?.items, filters.stock]);
+
+  const total = filters.stock === "low" ? tableItems.length : productsQuery.data?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / (filters.pageSize || DEFAULT_PAGE_SIZE)));
+
+  const stats = useMemo(() => {
+    const items = tableItems;
+    const active = items.filter((p) => p.status === "ACTIVE").length;
+    const lowStock = items.filter((p) => p.stock > 0 && p.stock <= 10).length;
+    const outOfStock = items.filter((p) => p.stock === 0).length;
+    return { total: total || items.length, active, lowStock, outOfStock };
+  }, [tableItems, total]);
+
+  const upsertMutation = useMutation({
+    mutationFn: async (payload: { id?: string; values: ProductFormValues; imageFile: File | null; product?: Product }) => {
+      const priceValue = parseCurrency(payload.values.price);
+      const saleValue = payload.values.salePrice ? parseCurrency(payload.values.salePrice) : NaN;
+      const stockValue = Number.parseInt(sanitizeIntegerInput(payload.values.stock), 10);
+      if (!Number.isFinite(priceValue) || priceValue <= 0) {
+        throw new Error(t("products.invalid_price_positive", "Price must be greater than 0"));
+      }
+      if (payload.values.salePrice && (!Number.isFinite(saleValue) || saleValue >= priceValue)) {
+        throw new Error(t("products.invalid_sale_price", "Sale price must be lower"));
+      }
+      if (!Number.isFinite(stockValue) || stockValue < 0) throw new Error(t("products.invalid_stock", "Invalid stock"));
+
+      const basePayload: Partial<Product> = {
+        name: payload.values.name.trim(),
+        nameAr: payload.values.nameAr?.trim() || undefined,
+        slug: payload.values.slug,
+        description: payload.values.description?.trim() || undefined,
+        descriptionAr: payload.values.descriptionAr?.trim() || undefined,
+        categoryId: payload.values.categoryId,
+        status: payload.values.status,
+        stock: stockValue,
+        isHotOffer: payload.values.isHotOffer,
+        priceCents: toCents(priceValue),
+        salePriceCents: payload.values.salePrice ? toCents(saleValue) : undefined,
+        imageUrl: payload.values.mainImage || payload.values.images[0] || undefined,
+        images: payload.values.images.filter(Boolean),
+      };
+
+      if (!isAdmin) {
+        if (!payload.id || !payload.product) {
+          throw new Error(t("products.permissions.adminOnly", "Only admins can create products or change prices"));
+        }
+        basePayload.priceCents = payload.product?.priceCents ?? basePayload.priceCents;
+        basePayload.salePriceCents =
+          payload.product && typeof payload.product.salePriceCents !== "undefined"
+            ? payload.product.salePriceCents ?? undefined
+            : basePayload.salePriceCents;
+      }
+
+      if (payload.id) {
+        return updateProduct(payload.id, basePayload, payload.imageFile);
+      }
+      return createProduct(basePayload, payload.imageFile);
+    },
+    onSuccess: (_, variables) => {
+      toast.success(
+        variables.id ? t("products.updated", "Product updated") : t("products.created", "Product created")
+      );
+      queryClient.invalidateQueries({ queryKey: PRODUCTS_QUERY_KEY });
+      setDrawerState(null);
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, t("app.notifications.error", "Unable to save product")));
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteProduct(id),
+    onSuccess: () => {
+      toast.success(t("products.deleted", "Product deleted"));
+      queryClient.invalidateQueries({ queryKey: PRODUCTS_QUERY_KEY });
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error, t("app.notifications.error"))),
+  });
+
   useEffect(() => {
-    const id = props?.adminState?.selectedProduct;
-    if (!id) return;
+    if (!adminState?.selectedProduct) return;
     (async () => {
       try {
-        const p = await getProduct(String(id));
-        openEdit(p);
-      } catch (e) {
-        // ignore if not found
+        const product = await getProduct(String(adminState.selectedProduct));
+        setDrawerState({ mode: "edit", product });
+      } catch (error) {
+        toast.error(getApiErrorMessage(error, t("products.not_found", "Product not found")));
       } finally {
-        props?.updateAdminState?.({ selectedProduct: null });
+        updateAdminState?.({ selectedProduct: null });
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props?.adminState?.selectedProduct]);
+  }, [adminState?.selectedProduct]);
 
-  // uploadFiles disabled to avoid S3 endpoint usage
-  function uploadFiles(_files: FileList | File[]) {
-    toast.error(t("app.notifications.error") || "Upload is disabled by configuration");
-  }
-
-  async function save() {
-    setError(null);
-
-    const name = (form.name || "").trim();
-    let slug = (form.slug || "").trim();
-    if (!slug && name) slug = slugify(name);
-
-    if (!name || !slug || !form.categoryId) {
-      setError(
-        `${t("products.name")} / ${t("products.slug")} / ${t("products.category")} ${
-          t("app.notifications.error") || ""
-        }`
-      );
-      return;
-    }
-
-    const priceNum = parseNumberInput(form.price || "");
-    const saleNum = form.salePrice.trim() !== "" ? parseNumberInput(form.salePrice) : 0;
-    const stockNumParsed = parseNumberInput(form.stock || "");
-    const stockNum = Number.isFinite(stockNumParsed) ? Math.trunc(stockNumParsed) : NaN;
-
-    if (!isValidSlug(slug)) { setError(t("products.invalid_slug") || "Invalid slug format"); return; }
-    if (!Number.isFinite(priceNum) || priceNum < 0 || priceNum > MAX_PRICE) { setError(t("products.invalid_price") || "Invalid price"); return; }
-    if (form.salePrice.trim() !== "" && (!Number.isFinite(saleNum) || saleNum < 0 || saleNum > priceNum)) { setError(t("products.invalid_sale_price") || "Invalid sale price"); return; }
-    if (!Number.isFinite(stockNum) || stockNum < 0 || stockNum > MAX_STOCK) { setError(t("products.invalid_stock") || "Invalid stock"); return; }
-
-    const payload: Partial<Product> = {
-      name,
-      nameAr: form.nameAr || undefined,
-      slug,
-      description: form.description || undefined,
-      descriptionAr: form.descriptionAr || undefined,
-      isHotOffer: !!form.isHotOffer,
-      priceCents: toCents(priceNum || 0),
-      salePriceCents:
-        form.salePrice.trim() !== "" ? toCents(saleNum || 0) : undefined,
-      stock: stockNum,
-      status: form.status,
-      categoryId: form.categoryId,
-      // keep sending additional images only if backend expects them; omit in create form-data
-    };
-
-    try {
-      setSaving(true);
-      if (editing?.id) {
-        await updateProduct(editing.id, payload, form.imageFile || null);
-        toast.success(t("products.updated") || "Product updated");
-      } else {
-        await createProduct(payload, form.imageFile || null);
-        toast.success(t("products.created") || "Product created");
+  const handleSort = (field: SortField) => {
+    setFilters((prev) => {
+      if (prev.sortField === field) {
+        return { ...prev, sortDirection: prev.sortDirection === "asc" ? "desc" : "asc", page: 1 };
       }
-      await load();
-      setEditing(null);
-      setIsAddModalOpen(false);
-      setIsEditModalOpen(false);
-    } catch (e: any) {
-      const msg =
-        e?.response?.data?.message ||
-        e?.response?.data?.error ||
-        e?.message ||
-        "Failed to save product";
-      console.error("create/update product error:", e);
-      setError(String(msg));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function onDelete(id: string) {
-    try {
-      await deleteProduct(id);
-      toast.success(t("products.deleted") || "Product deleted");
-      await load();
-    } catch (e: any) {
-      toast.error(String(e?.response?.data?.message || e?.message || "Delete failed"));
-    }
-  }
-
-  // derived stats
-  const totalProducts = items.length;
-  const activeProducts = items.filter((p) => p.status === "ACTIVE").length;
-  const lowStock = items.filter((p) => p.stock > 0 && p.stock < 10).length;
-  const outOfStock = items.filter((p) => p.stock === 0).length;
-
-  // discount for UI preview in form
-  const discountPercent = useMemo(() => {
-    const priceNum = parseFloat(form.price || "0");
-    const saleNum = parseFloat(form.salePrice || "0");
-    return priceNum > 0 && saleNum > 0
-      ? Math.round((1 - saleNum / priceNum) * 100)
-      : null;
-  }, [form.price, form.salePrice]);
-
-  const ProductForm = ({ isEdit = false }: { isEdit?: boolean }) => {
-    const idPrefix = isEdit ? "edit" : "add";
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const composingNameRef = React.useRef(false);
-
-    function handleNameChange(next: string) {
-      setForm((prev) => {
-        const update: any = { ...prev, name: next };
-        if (!prev.slug && !composingNameRef.current) {
-          update.slug = slugify(next);
-        }
-        return update;
-      });
-    }
-    useEffect(() => {
-      if (form.imageFile) {
-        const url = URL.createObjectURL(form.imageFile);
-        setPreviewUrl(url);
-        return () => URL.revokeObjectURL(url);
-      }
-      setPreviewUrl(null);
-    }, [form.imageFile]);
-    return (
-      <div className="w-full">
-        
-
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-name`}>{t("products.name")}</Label>
-            <Input
-              id={`${idPrefix}-name`}
-              placeholder={t("products.name") || "Product name"}
-              value={form.name}
-              onCompositionStart={() => { composingNameRef.current = true; }}
-              onCompositionEnd={(e) => { composingNameRef.current = false; handleNameChange((e.target as HTMLInputElement).value); }}
-              onChange={(e) => handleNameChange(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-nameAr`}>{t("products.nameAr", "Arabic Name")}</Label>
-            <Input
-              id={`${idPrefix}-nameAr`}
-              placeholder={t("products.nameAr", "Arabic Name") as string}
-              value={form.nameAr || ""}
-              onChange={(e) => setForm({ ...form, nameAr: e.target.value })}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-slug`}>{t("products.slug")}</Label>
-            <Input
-              id={`${idPrefix}-slug`}
-              placeholder={t("products.slug") || "slug"}
-              value={form.slug}
-              onChange={(e) => setForm({ ...form, slug: e.target.value })}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="category">{t("products.category")}</Label>
-            <Select
-              value={form.categoryId || ""}
-              onValueChange={(value) => setForm({ ...form, categoryId: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={t("categories.title") || "Category"} />
-              </SelectTrigger>
-              <SelectContent>
-                {cats.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-description`}>{t("products.description")}</Label>
-            <Textarea
-              id={`${idPrefix}-description`}
-              placeholder={t("products.description") || "Description"}
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              rows={4}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-descriptionAr`}>{t("products.descriptionAr", "Arabic Description")}</Label>
-            <Textarea
-              id={`${idPrefix}-descriptionAr`}
-              placeholder={t("products.descriptionAr", "Arabic Description") as string}
-              value={form.descriptionAr || ""}
-              onChange={(e) => setForm({ ...form, descriptionAr: e.target.value })}
-              rows={4}
-            />
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Label>{t("products.isHotOffer", "Hot Offer")}</Label>
-            <Switch checked={!!form.isHotOffer} onCheckedChange={(v) => setForm({ ...form, isHotOffer: v })} />
-          </div>
-        </div>
-
-        <div className="space-y-4 mt-4">
-          <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-price`}>{t("products.price")}</Label>
-            <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                id={`${idPrefix}-price`}
-                inputMode="decimal"
-                placeholder="0.00"
-                value={form.price}
-                onChange={(e) => setForm({ ...form, price: e.target.value })}
-                className="pl-10"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-salePrice`}>{t("products.salePrice")}</Label>
-            <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                id={`${idPrefix}-salePrice`}
-                inputMode="decimal"
-                placeholder="0.00"
-                value={form.salePrice}
-                onChange={(e) => setForm({ ...form, salePrice: e.target.value })}
-                className="pl-10"
-              />
-            </div>
-          </div>
-
-          {discountPercent !== null && (
-            <div className="p-3 bg-green-50 rounded-lg">
-              <p className="text-sm text-green-700">
-                {t("products.discount", "الخصم")}: {discountPercent}% {t("products.off", "خصم")}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-4 mt-4">
-          <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-stock`}>{t("products.stock")}</Label>
-            <div className="relative">
-              <Package className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                id={`${idPrefix}-stock`}
-                inputMode="numeric"
-                placeholder="0"
-                value={form.stock}
-                onChange={(e) => setForm({ ...form, stock: e.target.value })}
-                className="pl-10"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="status">{t("products.status")}</Label>
-            <div className="flex items-center gap-3">
-              <Switch
-                id="status"
-                checked={form.status === "ACTIVE"}
-                onCheckedChange={(checked) =>
-                  setForm({ ...form, status: checked ? "ACTIVE" : "HIDDEN" })
-                }
-              />
-              <span className="text-sm">
-                {form.status === "ACTIVE"
-                  ? t("products.statuses.ACTIVE")
-                  : t(`products.statuses.${form.status}`)}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Media */}
-        <div className="space-y-4 mt-4">
-          <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-imageFile`}>{t("products.imageUrl", "Main Image")}</Label>
-            <Input
-              id={`${idPrefix}-imageFile`}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={(e: any) => {
-                const file = e.target?.files?.[0] || null;
-                const fixed = file ? normalizeImageFileType(file) : null;
-                if (fixed && fixed.size > MAX_FILE_MB * 1024 * 1024) {
-                  toast.error(t("products.upload.too_large", { size: MAX_FILE_MB }) || `File too large (> ${MAX_FILE_MB}MB)`);
-                  return;
-                }
-                setForm({ ...form, imageFile: fixed });
-              }}
-            />
-            {(form.imageFile || form.imageUrl) && (
-              <div className="w-32 h-32 rounded-lg overflow-hidden bg-gray-100">
-                {form.imageFile ? (
-                  <img src={previewUrl || undefined} alt="preview" className="w-full h-full object-cover" />
-                ) : (
-                  <ImageWithFallback
-                    src={form.imageUrl}
-                    alt="preview"
-                    className="w-full h-full object-cover"
-                  />
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label>{t("products.images")}</Label>
-            <Input
-              placeholder="url1,url2"
-              value={form.images}
-              onChange={(e) => setForm({ ...form, images: e.target.value })}
-            />
-          </div>
-
-          <div
-            className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files);
-            }}
-          >
-            <div className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-            <p className="text-sm text-gray-600 mb-2">
-              {t("products.media.hint", "ألصق روابط الصور بالأعلى (المعاينة تستخدم الصورة الرئيسية)")}
-            </p>
-
-            <Button
-              variant="outline"
-              onClick={() => {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = "image/*";
-                input.multiple = true;
-                input.onchange = (ev: any) => {
-                  if (ev.target?.files?.length) uploadFiles(ev.target.files);
-                };
-                input.click();
-              }}
-            >
-              {uploading ? t("app.loading", "Loading...") : t("app.actions.upload")}
-            </Button>
-
-            {uploading && (
-              <div className="mt-3">
-                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="bg-blue-600 h-2 transition-all"
-                    style={{ width: `${uploadProgress ?? 10}%` }}
-                  />
-                </div>
-                <p className="text-xs text-gray-600 mt-1">
-                  {uploadProgress ?? 10}% {t("app.loading", "Loading...")}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {null}
-
-          {form.images && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {form.images.split(",").map((url, idx) => {
-                const trimmed = url.trim();
-                if (!trimmed) return null;
-                const isMain = trimmed === form.imageUrl;
-                return (
-                  <div key={`${trimmed}-${idx}`} className="relative group">
-                    <div className="w-full aspect-square rounded-lg overflow-hidden bg-gray-100">
-                      <ImageWithFallback
-                        src={trimmed}
-                        alt={`img-${idx}`}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <div className="absolute inset-x-1 -bottom-1 translate-y-full group-hover:translate-y-0 transition">
-                      <div className="flex gap-1 mt-2">
-                        <Button
-                          size="sm"
-                          variant={isMain ? "default" : "secondary"}
-                          className="flex-1"
-                          onClick={() => setMainImage(trimmed)}
-                        >
-                          {isMain ? t("common.profile", "Main") : t("app.actions.apply", "Set main")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => {
-                            const next = form.images
-                              .split(",")
-                              .map((s) => s.trim())
-                              .filter(Boolean)
-                              .filter((u) => u !== trimmed)
-                              .join(",");
-                            setForm((prev) => ({
-                              ...prev,
-                              images: next,
-                              imageUrl: prev.imageUrl === trimmed ? "" : prev.imageUrl,
-                            }));
-                          }}
-                        >
-                          {t("app.actions.delete")}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {error && (
-          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2 mt-2">
-            {String(error)}
-          </div>
-        )}
-
-        <div className="flex gap-2 pt-6">
-          <Button onClick={save} disabled={saving} className="flex-1">
-            {saving
-              ? t("auth.signing_in") || "Saving..."
-              : isEdit
-              ? t("app.actions.update") || "Update Product"
-              : t("app.actions.create") || "Create Product"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => (isEdit ? setIsEditModalOpen(false) : setIsAddModalOpen(false))}
-            className="flex-1"
-            disabled={saving}
-          >
-            {t("app.actions.cancel")}
-          </Button>
-        </div>
-      </div>
-    );
+      return { ...prev, sortField: field, sortDirection: "asc", page: 1 };
+    });
   };
 
+  const sortIconClass = (field: SortField) =>
+    `w-3 h-3 transition-colors ${
+      filters.sortField === field ? "text-foreground" : "text-muted-foreground"
+    } ${filters.sortField === field && filters.sortDirection === "asc" ? "rotate-180" : ""}`;
+
+  const resetFilters = () => {
+    setFilters(defaultFilters);
+    setSearchInput("");
+  };
+
+  const activeFilterChips = buildFilterChips(
+    t,
+    filters,
+    searchInput,
+    filters.categoryId !== "all" ? categoryLookup.get(filters.categoryId) : undefined
+  );
+
   return (
-    <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="p-4 lg:p-6 space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="font-poppins text-2xl lg:text-3xl text-gray-900" style={{ fontWeight: 700 }}>
-            {t("products.title") || "Products Management"}
-          </h1>
-          <p className="text-gray-600 mt-1 text-sm lg:text-base">
-            {t("products.subtitle", "إدارة كتالوج المنتجات")}
+          <h1 className="text-2xl lg:text-3xl font-semibold text-foreground">{t("products.title")}</h1>
+          <p className="text-muted-foreground text-sm lg:text-base">
+            {t("products.subtitle", "Manage inventory, prices, and availability")}
           </p>
         </div>
-
-        <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-          <Button className="flex items-center gap-2 w-full sm:w-auto" onClick={openCreate}>
+        {isAdmin && (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button variant="outline" className="gap-2" onClick={() => setBulkOpen(true)}>
+              <Upload className="w-4 h-4" />
+              {t("products.importExcel", "Bulk upload")}
+            </Button>
+            <Button className="gap-2" onClick={() => setDrawerState({ mode: "create" })}>
               <Plus className="w-4 h-4" />
               {t("products.addNew")}
-          </Button>
-          <DialogContent
-            className="max-w-2xl max-h-[80vh] overflow-y-auto bg-white dark:bg-slate-900"
-          >
-            <DialogHeader>
-              <DialogTitle>{t("products.addNew")}</DialogTitle>
-            </DialogHeader>
-            <ProductForm />
-          </DialogContent>
-        </Dialog>
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
-        <Card>
-          <CardContent className="p-3 lg:p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs lg:text-sm text-gray-600">{t("products.stats.total", "إجمالي المنتجات")}</p>
-                <p className="text-xl lg:text-2xl font-bold text-gray-900">{totalProducts}</p>
-              </div>
-              <Package className="w-6 h-6 lg:w-8 lg:h-8 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 lg:p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs lg:text-sm text-gray-600">{t("products.stats.active", "منتجات نشطة")}</p>
-                <p className="text-xl lg:text-2xl font-bold text-green-600">
-                  {activeProducts}
-                </p>
-              </div>
-              <TrendingUp className="w-6 h-6 lg:w-8 lg:h-8 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 lg:p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs lg:text-sm text-gray-600">{t("products.stats.low", "نقص المخزون")}</p>
-                <p className="text-xl lg:text-2xl font-bold text-yellow-600">
-                  {lowStock}
-                </p>
-              </div>
-              <AlertTriangle className="w-6 h-6 lg:w-8 lg:h-8 text-yellow-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 lg:p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs lg:text-sm text-gray-600">{t("products.stats.out", "غير متوفر")}</p>
-                <p className="text-xl lg:text-2xl font-bold text-red-600">
-                  {outOfStock}
-                </p>
-              </div>
-              <TrendingDown className="w-6 h-6 lg:w-8 lg:h-8 text-red-600" />
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon={Package} label={t("products.stats.total", "Total products")} value={stats.total} />
+        <StatCard icon={DollarSign} label={t("products.stats.active", "Active")} value={stats.active} accent="text-emerald-600" />
+        <StatCard icon={Flame} label={t("products.stats.low", "Low stock")} value={stats.lowStock} accent="text-amber-600" />
+        <StatCard icon={AlertTriangle} label={t("products.stats.out", "Out of stock")} value={stats.outOfStock} accent="text-rose-600" />
       </div>
 
-      {/* Search & Filters */}
       <Card>
-        <CardContent className="p-3 lg:p-4">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 lg:gap-4">
-            <div className="relative flex-1 min-w-0">
-              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+        <CardContent className="space-y-4 p-4">
+          <div className="flex flex-col lg:flex-row gap-3">
+            <div className="relative flex-1">
+              <SearchIcon className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
               <Input
-                placeholder={t("filters.searchPlaceholder") || "Search products..."}
-                value={search}
-                onChange={(e) => {
-                  setPage(1);
-                  setSearch(e.target.value);
+                value={searchInput}
+                onChange={(event) => {
+                  setSearchInput(event.target.value);
+                  setFilters((prev) => ({ ...prev, page: 1 }));
                 }}
-                className="pl-10"
+                placeholder={t("filters.searchPlaceholder", "Search by name or SKU")}
+                className="pl-9"
               />
             </div>
-            <Select
-              value={statusFilter}
-              onValueChange={(v: StatusFilter) => {
-                setPage(1);
-                setStatusFilter(v);
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder={t("products.status")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("common.all", "الكل")}</SelectItem>
-                <SelectItem value="DRAFT">{t("products.statuses.DRAFT")}</SelectItem>
-                <SelectItem value="ACTIVE">{t("products.statuses.ACTIVE")}</SelectItem>
-                <SelectItem value="HIDDEN">{t("products.statuses.HIDDEN")}</SelectItem>
-                <SelectItem value="DISCONTINUED">{t("products.statuses.DISCONTINUED")}</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={categoryFilter}
-              onValueChange={(v) => {
-                setPage(1);
-                setCategoryFilter(v);
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-48">
-                <SelectValue placeholder={t("products.category")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("common.all", "الكل")}</SelectItem>
-                {cats.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2 flex-wrap">
+              <Select
+                value={filters.status}
+                onValueChange={(value: StatusFilter) => setFilters((prev) => ({ ...prev, status: value, page: 1 }))}
+              >
+                <SelectTrigger className="w-full sm:w-40">
+                  <SelectValue placeholder={t("products.status")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {statusFilterOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {t(option.label)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={filters.categoryId}
+                onValueChange={(value) => setFilters((prev) => ({ ...prev, categoryId: value, page: 1 }))}
+              >
+                <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue placeholder={t("products.category")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("common.all")}</SelectItem>
+                  {(categoriesQuery.data?.items || []).map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={filters.stock}
+                onValueChange={(value: StockFilter) => setFilters((prev) => ({ ...prev, stock: value, page: 1 }))}
+              >
+                <SelectTrigger className="w-full sm:w-36">
+                  <SelectValue placeholder={t("products.stock")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {stockFilterOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {t(option.label)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">{t("products.minPrice")}</Label>
+              <Input
+                inputMode="decimal"
+                value={filters.minPrice?.toString() || ""}
+                onChange={(event) =>
+                  setFilters((prev) => {
+                    const next = sanitizeCurrencyInput(event.target.value);
+                    if (!next) return { ...prev, minPrice: undefined };
+                    const numeric = parseCurrency(next);
+                    if (Number.isNaN(numeric)) return prev;
+                    return { ...prev, minPrice: numeric };
+                  })
+                }
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">{t("products.maxPrice")}</Label>
+              <Input
+                inputMode="decimal"
+                value={filters.maxPrice?.toString() || ""}
+                onChange={(event) =>
+                  setFilters((prev) => {
+                    const next = sanitizeCurrencyInput(event.target.value);
+                    if (!next) return { ...prev, maxPrice: undefined };
+                    const numeric = parseCurrency(next);
+                    if (Number.isNaN(numeric)) return prev;
+                    return { ...prev, maxPrice: numeric };
+                  })
+                }
+                placeholder="0"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch checked={filters.onlyHot} onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, onlyHot: checked, page: 1 }))} />
+              <span className="text-sm">{t("products.hotOffer", "Hot offer")}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">{t("products.sort.label", "Sort by")}</Label>
+              <Select
+                value={filters.sortField}
+                onValueChange={(value: SortField) => setFilters((prev) => ({ ...prev, sortField: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t("products.sort.label")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(sortFieldLabels) as SortField[]).map((field) => (
+                    <SelectItem key={field} value={field}>
+                      {t(sortFieldLabels[field])}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={filters.sortDirection}
+                onValueChange={(value: "asc" | "desc") => setFilters((prev) => ({ ...prev, sortDirection: value }))}
+              >
+                <SelectTrigger className="w-24">
+                  <SelectValue placeholder={t("products.sort.direction")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(["asc", "desc"] as const).map((dir) => (
+                    <SelectItem key={dir} value={dir}>
+                      {t(sortDirections[dir])}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {activeFilterChips.length > 0 && (
+            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+              {activeFilterChips.map((chip, index) => (
+                <Badge key={`${chip.label}-${index}`} variant="secondary">
+                  {chip.label}
+                </Badge>
+              ))}
+              <Button variant="ghost" size="sm" onClick={resetFilters} className="h-7 px-2">
+                {t("filters.reset")}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Products Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>
-            {t("products.title")} ({items.length})
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            {t("products.tableTitle", "Products")}
           </CardTitle>
+          <span className="text-sm text-muted-foreground">
+            {t("app.table.page")} {filters.page} {t("app.table.of")} {totalPages}
+          </span>
         </CardHeader>
-        <CardContent className="p-0 lg:p-6">
-          <div className="overflow-x-auto">
-            <Table className="min-w-[900px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("products.name")}</TableHead>
-                  <TableHead>{t("products.category")}</TableHead>
-                  <TableHead>{t("products.price")}</TableHead>
-                  <TableHead>{t("products.stock")}</TableHead>
-                  <TableHead>{t("products.status")}</TableHead>
-                  <TableHead>{t("products.performance", "الأداء")}</TableHead>
-                  <TableHead>{t("app.actions.actions", "Actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.length ? (
-                  items.map((p) => {
-                    const stockStatus = getStockStatus(p.stock);
-                    const price = fromCents(p.priceCents);
-                    const hasSale = p.salePriceCents && p.salePriceCents > 0;
-
-                    return (
-                      <TableRow key={p.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100">
-                              <ImageWithFallback
-                                src={p.imageUrl || (p.images && p.images[0]) || ""}
-                                alt={p.name}
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-                            <div>
-                              <p className="font-medium">{p.name}</p>
-                              <p className="text-sm text-gray-600">{p.slug}</p>
-                            </div>
+        <CardContent className="p-0">
+          {productsQuery.isLoading ? (
+            <div className="p-6">
+              <AdminTableSkeleton rows={6} columns={8} />
+            </div>
+          ) : productsQuery.isError ? (
+            <div className="p-6">
+              <ErrorState
+                message={t("app.table.error", "Unable to load products right now")}
+                onRetry={() => productsQuery.refetch()}
+              />
+            </div>
+          ) : tableItems.length ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="cursor-pointer" onClick={() => handleSort("name")}>
+                      <div className="flex items-center gap-1">
+                        {t("products.product")}
+                        <ArrowUpDown className={sortIconClass("name")} />
+                      </div>
+                    </TableHead>
+                    <TableHead>{t("products.category")}</TableHead>
+                    <TableHead className="cursor-pointer" onClick={() => handleSort("createdAt")}>
+                      <div className="flex items-center gap-1">
+                        {t("products.createdAt", "Created")}
+                        <ArrowUpDown className={sortIconClass("createdAt")} />
+                      </div>
+                    </TableHead>
+                    <TableHead className="cursor-pointer" onClick={() => handleSort("priceCents")}>
+                      <div className="flex items-center gap-1">
+                        {t("products.price")}
+                        <ArrowUpDown className={sortIconClass("priceCents")} />
+                      </div>
+                    </TableHead>
+                    <TableHead className="cursor-pointer" onClick={() => handleSort("stock")}>
+                      <div className="flex items-center gap-1">
+                        {t("products.stock")}
+                        <ArrowUpDown className={sortIconClass("stock")} />
+                      </div>
+                    </TableHead>
+                    <TableHead>{t("products.status")}</TableHead>
+                    <TableHead>{t("products.hotOffer", "Hot offer")}</TableHead>
+                    <TableHead className="text-right">{t("app.actions.actions")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tableItems.map((product) => (
+                    <TableRow key={product.id}>
+                      <TableCell>
+                        <div className="flex gap-3">
+                          <div className="w-14 h-14 rounded-md overflow-hidden bg-muted">
+                            {product.imageUrl ? (
+                              <ImageWithFallback src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                <ImageIcon className="w-5 h-5" />
+                              </div>
+                            )}
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">
-                            {cats.find((c) => c.id === p.categoryId)?.name || "-"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {hasSale ? (
-                            <div>
-                              <span className="font-medium text-primary">
-                                {fromCents(p.salePriceCents!).toFixed(2)}
-                              </span>
-                              <span className="text-sm text-gray-500 line-through ml-2">
-                                {price.toFixed(2)}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="font-medium">{price.toFixed(2)}</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
                           <div>
-                            <Badge className={stockStatus.color}>{stockStatus.label}</Badge>
-                            <p className="text-sm text-gray-600 mt-1">
-                              {p.stock} {t("products.units", "قطع")}
-                            </p>
+                            <p className="font-medium text-sm">{product.name}</p>
+                            <p className="text-xs text-muted-foreground">{product.slug}</p>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={p.status === "ACTIVE" ? "default" : "secondary"}
-                            className={
-                              p.status === "ACTIVE"
-                                ? "bg-green-100 text-green-700"
-                                : "bg-gray-100 text-gray-700"
-                            }
-                          >
-                            {t(`products.statuses.${p.status}`)}
+                        </div>
+                      </TableCell>
+                      <TableCell>{categoryLookup.get(product.categoryId) || "--"}</TableCell>
+                      <TableCell>{formatDate(product.createdAt, i18n.language)}</TableCell>
+                      <TableCell>{formatPrice(product.priceCents, i18n.language)}</TableCell>
+                      <TableCell>
+                        <Badge className={stockClass(product.stock)}>
+                          {product.stock === 0
+                            ? t("products.stockFilters.out", "Out of stock")
+                            : product.stock <= 10
+                            ? t("products.stockFilters.low", "Low stock")
+                            : t("products.stockFilters.in", "In stock")}{" "}
+                          ({product.stock})
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={statusStyles[product.status]}>{t(`products.statuses.${product.status}`)}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {product.isHotOffer ? (
+                          <Badge className="bg-amber-100 text-amber-700 gap-1">
+                            <Flame className="w-3 h-3" />
+                            {t("products.hotOffer")}
                           </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm">
-                            <div className="flex items-center gap-1">
-                              {(p.stock ?? 0) > 10 ? (
-                                <TrendingUp className="w-3 h-3 text-green-600" />
-                              ) : (
-                                <TrendingDown className="w-3 h-3 text-red-600" />
-                              )}
-                              <span>
-                                {(p.stock ?? 0) > 10
-                                  ? t("products.trend.good", "جيد")
-                                  : t("products.trend.low", "منخفض")}
-                              </span>
-                            </div>
-                            <p className="text-gray-600">
-                              {t("products.id", "المعرّف")}: {p.id.slice(0, 6)}…
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        {isAdmin && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">--</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button size="icon" variant="ghost" onClick={() => setDrawerState({ mode: "edit", product })}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          {isAdmin && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button size="icon" variant="ghost" className="text-rose-600">
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
                                 <AlertDialogHeader>
-                                  <AlertDialogTitle>
-                                    {t("products.delete", "حذف المنتج")}
-                                  </AlertDialogTitle>
+                                  <AlertDialogTitle>{t("products.delete")}</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    {t(
-                                      "products.deleteConfirm",
-                                      "هل أنت متأكد من حذف هذا المنتج؟ هذا الإجراء لا يمكن التراجع عنه."
-                                    )}
+                                    {t("products.deleteConfirm", "This action cannot be undone")}
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>{t("app.actions.cancel")}</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => onDelete(p.id)}
-                                    className="bg-red-600 hover:bg-red-700"
-                                  >
+                                  <AlertDialogAction onClick={() => deleteMutation.mutate(product.id)}>
                                     {t("app.actions.delete")}
                                   </AlertDialogAction>
                                 </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                        )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7}>{t("app.table.noData")}</TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div className="p-6">
+              <EmptyState
+                title={t("products.noResults", "No products found for the selected filters")}
+                description={t("products.noResultsHint", "Try adjusting your filters or search query.")}
+                action={
+                  <Button size="sm" variant="outline" onClick={() => productsQuery.refetch()}>
+                    {t("app.actions.retry")}
+                  </Button>
+                }
+              />
+            </div>
+          )}
 
-          {/* Pagination */}
-          <div className="flex items-center gap-2 justify-end p-4">
-            <Button
-              variant="outline"
-              disabled={page === 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              {t("app.actions.prev")}
-            </Button>
-            <span className="text-sm">
-              {t("app.table.page")} {page} {t("app.table.of")}{" "}
-              {Math.max(1, Math.ceil(total / pageSize))}
-            </span>
-            <Button
-              variant="outline"
-              disabled={page * pageSize >= total}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              {t("app.actions.next")}
-            </Button>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between border-t px-4 py-3 text-sm">
+            <div className="flex flex-wrap items-center gap-3">
+              <span>
+                {t("app.table.total", "Total")}: {total}
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">{t("app.table.pageSize", "Rows per page")}</span>
+                <Select
+                  value={String(filters.pageSize)}
+                  onValueChange={(value) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      pageSize: Number(value),
+                      page: 1,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <SelectItem key={size} value={size.toString()}>
+                        {size}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={filters.page === 1}
+                onClick={() => setFilters((prev) => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+              >
+                {t("app.actions.prev")}
+              </Button>
+              <span>
+                {filters.page}/{totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={filters.page >= totalPages}
+                onClick={() => setFilters((prev) => ({ ...prev, page: Math.min(totalPages, prev.page + 1) }))}
+              >
+                {t("app.actions.next")}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Edit Product Modal */}
-      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent
-          className="max-w-2xl max-h-[80vh] overflow-y-auto bg-white dark:bg-slate-900"
-        >
+      <Dialog open={!!drawerState} onOpenChange={(open) => !open && setDrawerState(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{t("products.editProduct", "تعديل المنتج")}</DialogTitle>
+            <DialogTitle>
+              {drawerState?.mode === "edit" ? t("products.editProduct", "Edit product") : t("products.addNew")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("products.formSubtitle", "Fill in the product details below")}
+            </DialogDescription>
           </DialogHeader>
-          <ProductForm isEdit />
+          <ProductForm
+            key={drawerState?.product?.id || drawerState?.mode}
+            categories={categoriesQuery.data?.items || []}
+            initialValues={mapProductToForm(drawerState?.product)}
+            loading={upsertMutation.isPending}
+            canEditPrice={isAdmin}
+            onCancel={() => setDrawerState(null)}
+            onSubmit={(values, imageFile) =>
+              upsertMutation.mutate({ id: drawerState?.product?.id, values, imageFile, product: drawerState?.product })
+            }
+          />
         </DialogContent>
       </Dialog>
+
+      {isAdmin && (
+        <BulkUploadDrawer
+          open={bulkOpen}
+          onOpenChange={(open) => setBulkOpen(open)}
+          onCompleted={() => queryClient.invalidateQueries({ queryKey: PRODUCTS_QUERY_KEY })}
+        />
+      )}
     </div>
   );
+}
+type StatCardProps = {
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  label: string;
+  value: number;
+  accent?: string;
+};
+
+function StatCard({ icon: Icon, label, value, accent }: StatCardProps) {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-3 p-4">
+        <div className={`w-10 h-10 rounded-full bg-muted flex items-center justify-center ${accent || ""}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className="text-xl font-semibold">{value}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+type ProductFormProps = {
+  categories: Category[];
+  initialValues: ProductFormValues;
+  loading: boolean;
+  canEditPrice: boolean;
+  onSubmit: (values: ProductFormValues, imageFile: File | null) => void;
+  onCancel: () => void;
+};
+
+function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmit, onCancel }: ProductFormProps) {
+  const { t } = useTranslation();
+  const form = useForm<ProductFormValues>({
+    resolver: zodResolver(productFormSchema) as Resolver<ProductFormValues>,
+    defaultValues: initialValues,
+  });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const slugEdited = useRef(false);
+
+  useEffect(() => {
+    form.reset(initialValues);
+    setImageFile(null);
+    slugEdited.current = false;
+  }, [initialValues, form]);
+
+  useEffect(() => {
+    if (!imageFile) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(imageFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
+
+  const nameValue = form.watch("name");
+  const saleValue = form.watch("salePrice");
+  useEffect(() => {
+    if (slugEdited.current) return;
+    if (!nameValue.trim()) return;
+    form.setValue("slug", slugify(nameValue));
+  }, [nameValue, form]);
+
+  const discount = calcDiscount(form.watch("price"), saleValue || "");
+
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setImageFile(null);
+      return;
+    }
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      toast.error(t("products.upload.too_large", "File too large"));
+      return;
+    }
+    setImageFile(file);
+  };
+
+  const submit = form.handleSubmit((values: ProductFormValues) => onSubmit(values, imageFile));
+
+  return (
+    <form className="space-y-6" onSubmit={submit}>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="space-y-4">
+          <div>
+            <Label>{t("products.name")}</Label>
+            <Input {...form.register("name")} placeholder={t("products.name") || ""} />
+            {form.formState.errors.name && (
+              <p className="text-xs text-rose-600 mt-1">{form.formState.errors.name.message}</p>
+            )}
+          </div>
+          <div>
+            <Label>{t("products.nameAr", "Arabic name")}</Label>
+            <Input {...form.register("nameAr")} placeholder={t("products.nameAr") || ""} />
+          </div>
+          <div>
+            <Label>{t("products.slug")}</Label>
+            <Input
+              {...form.register("slug")}
+              onFocus={() => (slugEdited.current = true)}
+              onChange={(event) => {
+                slugEdited.current = true;
+                form.setValue("slug", slugify(event.target.value));
+              }}
+              placeholder="fresh-fruits"
+            />
+            {form.formState.errors.slug && (
+              <p className="text-xs text-rose-600 mt-1">{form.formState.errors.slug.message}</p>
+            )}
+          </div>
+          <div>
+            <Label>{t("products.category")}</Label>
+            <Select value={form.watch("categoryId")} onValueChange={(value) => form.setValue("categoryId", value)}>
+              <SelectTrigger>
+                <SelectValue placeholder={t("products.category")} />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((category) => (
+                  <SelectItem key={category.id} value={category.id}>
+                    {category.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.formState.errors.categoryId && (
+              <p className="text-xs text-rose-600 mt-1">{form.formState.errors.categoryId.message}</p>
+            )}
+          </div>
+          <div>
+            <Label>{t("products.description")}</Label>
+            <Textarea rows={4} {...form.register("description")} placeholder={t("products.description") || ""} />
+          </div>
+          <div>
+            <Label>{t("products.descriptionAr", "Arabic description")}</Label>
+            <Textarea rows={4} {...form.register("descriptionAr")} />
+          </div>
+          <div className="flex items-center gap-3">
+            <Switch checked={form.watch("isHotOffer")} onCheckedChange={(checked) => form.setValue("isHotOffer", checked)} />
+            <div>
+              <p className="text-sm font-medium">{t("products.hotOffer")}</p>
+              <p className="text-xs text-muted-foreground">{t("products.hotOffer_hint", "Highlight product in heroes and offer sections")}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Controller
+              control={form.control}
+              name="price"
+              render={({ field }) => (
+                <div>
+                  <Label>{t("products.price")}</Label>
+                  <Input
+                    {...field}
+                    inputMode="decimal"
+                    onChange={(event) => field.onChange(sanitizeCurrencyInput(event.target.value))}
+                    placeholder="0.00"
+                    disabled={!canEditPrice}
+                  />
+                  {form.formState.errors.price && (
+                    <p className="text-xs text-rose-600 mt-1">{form.formState.errors.price.message}</p>
+                  )}
+                  {!canEditPrice && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t("products.price_locked", "Only admins can update prices")}
+                    </p>
+                  )}
+                </div>
+              )}
+            />
+            <Controller
+              control={form.control}
+              name="salePrice"
+              render={({ field }) => (
+                <div>
+                  <Label>{t("products.salePrice")}</Label>
+                  <Input
+                    {...field}
+                    inputMode="decimal"
+                    onChange={(event) => field.onChange(sanitizeCurrencyInput(event.target.value))}
+                    placeholder="0.00"
+                    disabled={!canEditPrice}
+                  />
+                </div>
+              )}
+            />
+          </div>
+          {discount !== null && (
+            <div className="rounded-md bg-emerald-50 text-emerald-700 text-sm px-3 py-2">
+              {t("products.discount", "Discount")}: {discount}%
+            </div>
+          )}
+
+          <Controller
+            control={form.control}
+            name="stock"
+            render={({ field }) => (
+              <div>
+                <Label>{t("products.stock")}</Label>
+                <Input
+                  {...field}
+                  inputMode="numeric"
+                  onChange={(event) => field.onChange(sanitizeIntegerInput(event.target.value))}
+                  placeholder="0"
+                />
+                {form.formState.errors.stock && (
+                  <p className="text-xs text-rose-600 mt-1">{form.formState.errors.stock.message}</p>
+                )}
+              </div>
+            )}
+          />
+
+          <div>
+            <Label>{t("products.status")}</Label>
+            <Select value={form.watch("status")} onValueChange={(value) => form.setValue("status", value as Product["status"])}>
+              <SelectTrigger>
+                <SelectValue placeholder={t("products.status")} />
+              </SelectTrigger>
+              <SelectContent>
+                {(["ACTIVE", "DRAFT", "HIDDEN", "DISCONTINUED"] as const).map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {t(`products.statuses.${status}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label>{t("products.imageUrl", "Main image")}</Label>
+            <Input type="file" accept="image/*" onChange={handleImageChange} />
+            {(previewUrl || form.watch("mainImage")) && (
+              <div className="mt-2 w-32 h-32 rounded-lg overflow-hidden bg-muted">
+                {previewUrl ? (
+                  <img src={previewUrl} alt="preview" className="w-full h-full object-cover" />
+                ) : (
+                  <ImageWithFallback src={form.watch("mainImage") || ""} alt="main" className="w-full h-full object-cover" />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <Controller
+        control={form.control}
+        name="images"
+        render={({ field }) => (
+          <ProductImagesInput
+            value={field.value}
+            mainImage={form.watch("mainImage")}
+            onChange={(value) => field.onChange(value)}
+            onMainChange={(value) => form.setValue("mainImage", value)}
+          />
+        )}
+      />
+
+      <div className="flex gap-3 justify-end">
+        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+          {t("app.actions.cancel")}
+        </Button>
+        <Button type="submit" disabled={loading}>
+          {loading ? t("app.loading", "Saving...") : t("app.actions.save", "Save product")}
+        </Button>
+      </div>
+    </form>
+  );
+}
+type ProductImagesInputProps = {
+  value: string[];
+  mainImage?: string;
+  onChange: (value: string[]) => void;
+  onMainChange: (value: string) => void;
+};
+
+function ProductImagesInput({ value, mainImage, onChange, onMainChange }: ProductImagesInputProps) {
+  const { t } = useTranslation();
+  const [urlInput, setUrlInput] = useState("");
+  const dragIndex = useRef<number | null>(null);
+
+  const handleAdd = () => {
+    const trimmed = urlInput.trim();
+    if (!trimmed) return;
+    onChange([...(value || []), trimmed]);
+    setUrlInput("");
+  };
+
+  const handleDropNew = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const dropped = event.dataTransfer.getData("text/uri-list") || event.dataTransfer.getData("text/plain");
+    if (!dropped) return;
+    const trimmed = dropped.trim();
+    if (!trimmed) return;
+    onChange([...(value || []), trimmed]);
+  };
+
+  const handleReorder = (targetIndex: number) => {
+    if (dragIndex.current === null || dragIndex.current === targetIndex) return;
+    const next = [...value];
+    const [item] = next.splice(dragIndex.current, 1);
+    next.splice(targetIndex, 0, item);
+    dragIndex.current = null;
+    onChange(next);
+  };
+
+  const items = value || [];
+
+  return (
+    <div className="space-y-3">
+      <Label>{t("products.images")}</Label>
+      <div
+        className="border border-dashed rounded-lg p-4 text-center text-sm text-muted-foreground"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={handleDropNew}
+      >
+        {t("products.media.hint", "Drop image URLs here or paste them below.")}
+      </div>
+      <div className="flex gap-2">
+        <Input
+          value={urlInput}
+          onChange={(event) => setUrlInput(event.target.value)}
+          placeholder="https://cdn.fasket.com/image.jpg"
+        />
+        <Button type="button" onClick={handleAdd}>
+          {t("app.actions.add", "Add")}
+        </Button>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-xs text-muted-foreground">{t("products.images.empty", "No gallery images added")}</p>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {items.map((url, index) => (
+            <div
+              key={`${url}-${index}`}
+              className="border rounded-lg p-2 space-y-2"
+              draggable
+              onDragStart={() => (dragIndex.current = index)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => handleReorder(index)}
+            >
+              <div className="w-full aspect-square bg-muted rounded-md overflow-hidden">
+                <ImageWithFallback src={url} alt={`image-${index}`} className="w-full h-full object-cover" />
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <Badge variant={mainImage === url ? "default" : "secondary"}>
+                  {mainImage === url ? t("products.mainImage", "Cover") : t("products.gallery", "Gallery")}
+                </Badge>
+                <div className="flex gap-1">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => onMainChange(url)}>
+                    {t("app.actions.set", "Set")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-rose-500"
+                    onClick={() => {
+                      const next = items.filter((_, i) => i !== index);
+                      onChange(next);
+                      if (mainImage === url) {
+                        onMainChange(next[0] || "");
+                      }
+                    }}
+                  >
+                    {t("app.actions.delete")}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+type BulkUploadDrawerProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCompleted: () => void;
+};
+
+function BulkUploadDrawer({ open, onOpenChange, onCompleted }: BulkUploadDrawerProps) {
+  const { t } = useTranslation();
+  const [file, setFile] = useState<File | null>(null);
+  const [result, setResult] = useState<BulkUploadResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setFile(null);
+      setResult(null);
+      setError(null);
+      setUploading(false);
+    }
+  }, [open]);
+
+  const handleUpload = async () => {
+    if (!file) {
+      setError(t("products.bulkImport.noFile", "Select a file"));
+      return;
+    }
+    setUploading(true);
+    setError(null);
+    try {
+      const res = await uploadBulkFile(file);
+      setResult(res);
+      toast.success(t("products.bulkImport.success", "Bulk upload complete"));
+      onCompleted();
+    } catch (err) {
+      const message = getApiErrorMessage(err, t("products.bulkImport.error", "Upload failed"));
+      setError(message);
+      toast.error(message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const rows = useMemo(() => {
+    if (result?.rows?.length) return result.rows;
+    if (result?.errors?.length) {
+      return result.errors.map((item) => ({ row: item.row, status: "failed" as const, message: item.message, name: item.name }));
+    }
+    return [] as BulkRowStatus[];
+  }, [result]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{t("products.importExcel", "Import products from Excel")}</DialogTitle>
+          <DialogDescription>
+            {t("products.bulkImport.instructions1", "Download the template, fill it, then upload the file.")}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-5">
+          <div className="flex flex-wrap gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              onClick={async () => {
+                try {
+                  await downloadBulkTemplate();
+                  toast.success(t("products.bulkImport.templateDownloaded", "Template downloaded"));
+                } catch (err) {
+                  toast.error(getApiErrorMessage(err, t("products.bulkImport.templateError", "Unable to download template")));
+                }
+              }}
+            >
+              <Download className="w-4 h-4" />
+              {t("products.bulkImport.downloadTemplate", "Download template")}
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => inputRef.current?.click()}>
+              {t("products.bulkImport.chooseFile", "Choose file")}
+            </Button>
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".xlsx,.csv"
+              className="hidden"
+              onChange={(event) => {
+                const next = event.target.files?.[0];
+                setFile(next || null);
+                setResult(null);
+                setError(null);
+              }}
+            />
+          </div>
+
+          <div
+            className="border-2 border-dashed rounded-lg p-6 text-center"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              const next = event.dataTransfer.files?.[0];
+              if (!next) return;
+              setFile(next);
+              setResult(null);
+              setError(null);
+            }}
+          >
+            {file ? (
+              <div>
+                <p className="font-medium">{file.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {(file.size / 1024).toFixed(1)} KB
+                </p>
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-sm">
+                {t("products.bulkImport.dropzone", "Drag & drop your Excel file here")}
+              </p>
+            )}
+          </div>
+
+          {error && <div className="text-sm text-rose-600 bg-rose-50 rounded-md p-3">{error}</div>}
+
+          <div className="flex gap-3">
+            <Button type="button" className="flex-1" disabled={!file || uploading} onClick={handleUpload}>
+              {uploading ? t("products.bulkImport.uploading", "Uploading...") : t("products.bulkImport.startUpload", "Start upload")}
+            </Button>
+            <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={uploading}>
+              {t("app.actions.close")}
+            </Button>
+          </div>
+
+          {result && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">{t("products.bulkImport.created", "Created")}</p>
+                    <p className="text-2xl font-semibold text-emerald-600">{result.created}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">{t("products.bulkImport.updated", "Updated")}</p>
+                    <p className="text-2xl font-semibold text-blue-600">{result.updated}</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="border rounded-lg">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("products.bulkImport.row", "Row")}</TableHead>
+                      <TableHead>{t("products.bulkImport.product", "Product")}</TableHead>
+                      <TableHead>{t("products.bulkImport.status", "Status")}</TableHead>
+                      <TableHead>{t("products.bulkImport.message", "Message")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-muted-foreground">
+                          {t("products.bulkImport.noRows", "No row details provided")}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      rows.map((row, index) => (
+                        <TableRow key={`${row.row}-${index}`}>
+                          <TableCell>{row.row}</TableCell>
+                          <TableCell>{row.name || "--"}</TableCell>
+                          <TableCell>
+                            <Badge className={row.status === "success" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}>
+                              {row.status === "success"
+                                ? t("products.bulkImport.successRow", "Success")
+                                : t("products.bulkImport.failedRow", "Failed")}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{row.message || "--"}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+async function downloadBulkTemplate() {
+  const blob = await downloadProductsBulkTemplate();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "products-template.xlsx";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+async function uploadBulkFile(file: File): Promise<BulkUploadResult> {
+  const payload = await uploadProductsBulk(file);
+  const rows =
+    payload.rows?.map((row, index) => ({
+      row: row.row ?? row.rowNumber ?? index + 1,
+      status: (row.status || "").toLowerCase() === "failed" ? "failed" : "success",
+      message: row.errorMessage || row.message,
+      name: row.name,
+    })) ?? [];
+  const errors =
+    payload.errors?.map((error) => ({
+      row: error.row,
+      code: error.code,
+      message: error.message,
+    })) ?? [];
+  return {
+    created: payload.created ?? 0,
+    updated: payload.updated ?? 0,
+    skipped: payload.skipped ?? 0,
+    dryRun: payload.dryRun,
+    rows,
+    errors,
+  };
 }

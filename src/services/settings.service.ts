@@ -53,11 +53,9 @@ export type SettingsResponse = {
 };
 
 // --- Helpers ---
-const withTs = (params?: Record<string, any>) => ({ ...(params || {}), _ts: Date.now() });
-
 // --- Required by your component imports ---
 export async function getSettings() {
-  const { data } = await api.get<SettingsResponse>("/api/v1/admin/settings", { params: withTs() });
+  const { data } = await api.get<SettingsResponse>("/api/v1/admin/settings");
   return data;
 }
 

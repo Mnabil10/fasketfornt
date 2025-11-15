@@ -1,358 +1,353 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  fetchDashboard as getDashboard,
-  fetchDashboardTimeseries,
-  type DashboardSummary,
-} from "../../../services/dashboard.service";
+import { useDashboardAdmin } from "../../../hooks/api/useDashboardAdmin";
 import { fmtEGP } from "../../../lib/money";
-
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { Button } from "../../ui/button";
+import { Badge } from "../../ui/badge";
+import { Skeleton } from "../../ui/skeleton";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../ui/select";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
 } from "recharts";
-import {
-  Package, ShoppingCart, Users, DollarSign, TrendingUp, TrendingDown, Eye, ArrowRight,
-} from "lucide-react";
+import { ShoppingCart, Users, DollarSign, TrendingUp, ArrowRight, Flame } from "lucide-react";
 
-// Make these props optional. If you pass them (like in your second file), quick actions will navigate.
 export type AdminState = {
   currentScreen: "dashboard" | "products" | "categories" | "orders" | "customers" | "settings";
 };
+
 type Props = {
   adminState?: AdminState;
   updateAdminState?: (updates: Partial<AdminState>) => void;
 };
 
-export function DashboardOverview({ adminState, updateAdminState }: Props) {
+type RangeOption = "7d" | "30d" | "90d";
+type MetricOption = "revenue" | "orders";
+type TimeseriesPoint = { period: string; revenueCents: number; orders: number };
+
+function getDateRange(range: RangeOption) {
+  const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - (days - 1));
+  return { from: start.toISOString(), to: end.toISOString() };
+}
+
+export function DashboardOverview({ updateAdminState }: Props) {
   const { t, i18n } = useTranslation();
-  const [data, setData] = useState<DashboardSummary | null>(null);
-  const [series, setSeries] = useState<Array<{ period: string; revenueCents: number; orders: number }>>([]);
-  const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState<RangeOption>("7d");
+  const [metric, setMetric] = useState<MetricOption>("revenue");
+  const rangeFilter = useMemo(() => getDateRange(range), [range]);
+  const granularity = range === "90d" ? "week" : "day";
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const [d, ts] = await Promise.all([
-          getDashboard(), // summary
-          fetchDashboardTimeseries({ granularity: "day" }), // time-series
-        ]);
-        if (!mounted) return;
-        setData(d);
-        setSeries(ts);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const { summaryQuery, seriesQuery } = useDashboardAdmin(rangeFilter, granularity as "day" | "week");
 
-  const fmtDateTime = (iso: string) =>
-    new Date(iso).toLocaleString(i18n.language === "ar" ? "ar-EG" : undefined);
-
-  const getStatusColor = (status: string) => {
-    // Map your real backend statuses to badge colors
-    const s = String(status || "").toLowerCase();
-    if (["completed", "paid", "delivered", "success"].some((k) => s.includes(k)))
-      return "text-green-600 bg-green-100";
-    if (["processing", "in_progress", "preparing"].some((k) => s.includes(k)))
-      return "text-blue-600 bg-blue-100";
-    if (["pending", "created", "awaiting"].some((k) => s.includes(k)))
-      return "text-yellow-600 bg-yellow-100";
-    if (["cancel", "fail", "refunded"].some((k) => s.includes(k)))
-      return "text-red-600 bg-red-100";
-    return "text-gray-600 bg-gray-100";
-  };
-
-  const stats = useMemo(() => {
-    if (!data) return [];
-    return [
-      {
-        title: t("dashboard.orders"),
-        value: data.sales.totalOrders.toLocaleString(),
-        change: "", // you can wire this later from backend if available
-        icon: ShoppingCart,
-        color: "text-blue-600",
-      },
-      {
-        title: t("dashboard.revenue"),
-        value: fmtEGP(data.sales.totalRevenueCents),
-        change: "",
-        icon: DollarSign,
-        color: "text-green-600",
-      },
-      {
-        title: t("dashboard.avgOrder"),
-        value: fmtEGP(data.sales.avgOrderValueCents),
-        change: "",
-        icon: TrendingUp, // just an icon; not implying change
-        color: "text-purple-600",
-      },
-      {
-        title: t("dashboard.customers"),
-        value: (data.customersCount ?? 0).toString(),
-        change: "",
-        icon: Users,
-        color: "text-orange-600",
-      },
-    ];
-  }, [data, t]);
-
-  const salesChartData = useMemo(
+  const summary = summaryQuery.data;
+  const seriesData = (seriesQuery.data as TimeseriesPoint[] | undefined) || [];
+  const chartData = useMemo(
     () =>
-      series.map((p) => ({
-        name: p.period, // e.g., "2025-11-03"
-        revenue: Math.round((p.revenueCents || 0) / 100),
-        orders: p.orders || 0,
+      seriesData.map((point) => ({
+        name: new Date(point.period).toLocaleDateString(i18n.language === "ar" ? "ar-EG" : undefined, {
+          day: "numeric",
+          month: "short",
+        }),
+        revenue: Math.round((point.revenueCents || 0) / 100),
+        orders: point.orders || 0,
       })),
-    [series]
+    [seriesData, i18n.language]
   );
 
-  if (loading) return <div className="p-6">{t("app.loading")}</div>;
-  if (!data) return <div className="p-6">{t("app.notifications.error")}</div>;
+  const topProducts = summary?.topProducts?.slice(0, 5) || [];
+  const topCategories = summary?.topCategories?.slice(0, 5) || [];
+  const recentOrders = summary?.recent?.slice(0, 5) || [];
+  const lowStock = summary?.lowStock?.slice(0, 5) || [];
+
+  const stats = summary
+    ? [
+        {
+          label: t("dashboard.revenue", "Total revenue"),
+          value: fmtEGP(summary.sales.totalRevenueCents, i18n.language === "ar" ? "ar-EG" : "en-EG"),
+          icon: DollarSign,
+        },
+        {
+          label: t("dashboard.orders", "Orders"),
+          value: summary.sales.totalOrders.toLocaleString(),
+          icon: ShoppingCart,
+        },
+        {
+          label: t("dashboard.avgOrder", "Avg. order"),
+          value: fmtEGP(summary.sales.avgOrderValueCents, i18n.language === "ar" ? "ar-EG" : "en-EG"),
+          icon: TrendingUp,
+        },
+        {
+          label: t("dashboard.customers", "Customers"),
+          value: (summary.customersCount ?? 0).toLocaleString(),
+          icon: Users,
+        },
+      ]
+    : [];
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Quick Actions */}
-      <div className="flex flex-wrap gap-3">
-        <Button
-          onClick={() => updateAdminState?.({ currentScreen: "products" })}
-          variant="outline"
-          className="flex items-center gap-2"
-        >
-          <Package className="w-4 h-4" />
-          {t("products.add") || "Add Product"}
-        </Button>
-        <Button
-          onClick={() => updateAdminState?.({ currentScreen: "categories" })}
-          variant="outline"
-          className="flex items-center gap-2"
-        >
-          <Package className="w-4 h-4" />
-          {t("categories.manage") || "Manage Categories"}
-        </Button>
-        <Button
-          onClick={() => updateAdminState?.({ currentScreen: "orders" })}
-          variant="outline"
-          className="flex items-center gap-2"
-        >
-          <ShoppingCart className="w-4 h-4" />
-          {t("orders.viewAll") || "View Orders"}
-        </Button>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-2xl lg:text-3xl font-semibold text-foreground">{t("dashboard.title", "Analytics overview")}</h2>
+          <p className="text-sm text-muted-foreground">
+            {t("dashboard.subtitle", "Monitor sales, orders, and inventory performance in real-time")}
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <Select value={range} onValueChange={(value) => setRange(value as RangeOption)}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7d">{t("dashboard.range_7", "Last 7 days")}</SelectItem>
+              <SelectItem value="30d">{t("dashboard.range_30", "Last 30 days")}</SelectItem>
+              <SelectItem value="90d">{t("dashboard.range_90", "Last 90 days")}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={metric} onValueChange={(value) => setMetric(value as MetricOption)}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="revenue">{t("dashboard.metric_revenue", "Revenue")}</SelectItem>
+              <SelectItem value="orders">{t("dashboard.metric_orders", "Orders")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, index) => (
-          <Card key={index} className="hover:shadow-md transition-shadow cursor-pointer">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">{stat.title}</p>
-                  <h3 className="text-2xl font-semibold">{stat.value}</h3>
-                </div>
-                <div
-                  className={`w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center ${stat.color}`}
-                >
-                  <stat.icon className="w-6 h-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {summaryQuery.isLoading
+          ? Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-28" />)
+          : stats.map((stat) => (
+              <Card key={stat.label}>
+                <CardContent className="flex items-center gap-3 p-4">
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                    <stat.icon className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">{stat.label}</p>
+                    <p className="text-xl font-semibold">{stat.value}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
       </div>
 
-      {/* Charts + Top Products */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-w-0">
-        {/* Sales Overview */}
+      <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{t("dashboard.salesOverview") || "Daily Sales Overview"}</CardTitle>
-            <Button variant="ghost" size="sm" className="text-primary">
-              {t("common.viewDetails") || "View Details"} <ArrowRight className="w-4 h-4 ml-1" />
+            <div>
+              <CardTitle>{t("dashboard.salesTrend", "Sales trend")}</CardTitle>
+              <p className="text-xs text-muted-foreground">{t("dashboard.salesHint", "Revenue and orders for the selected period")}</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => summaryQuery.refetch()}>
+              {t("app.actions.refresh", "Refresh")}
             </Button>
           </CardHeader>
-          <CardContent className="min-w-0">
-            <div className="w-full h-[300px] min-w-0">
+          <CardContent className="h-72">
+            {seriesQuery.isLoading ? (
+              <Skeleton className="h-full" />
+            ) : (
               <ResponsiveContainer width="100%" height="100%">
-                {/* Combined chart: revenue (bar) + orders (line) */}
-                <BarChart data={salesChartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip
-                    formatter={(value: any, key: string) => {
-                      if (key === "revenue") return [fmtEGP((Number(value) || 0) * 100), t("dashboard.revenue")];
-                      return [value, t("dashboard.orders")];
-                    }}
-                    contentStyle={{
-                      backgroundColor: "white",
-                      border: "1px solid #e0e0e0",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                    }}
+                <LineChart data={chartData} margin={{ left: 12, right: 12 }}>
+                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 12 }} />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => (metric === "revenue" ? fmtCurrency(value, i18n.language) : value)}
                   />
-                  <Bar dataKey="revenue" radius={[4, 4, 0, 0]} />
-                  <Line type="monotone" dataKey="orders" strokeWidth={2} dot={false} />
-                </BarChart>
+                  <Tooltip formatter={(value: number) => formatTooltip(value, metric, i18n.language)} />
+                  <Line
+                    type="monotone"
+                    dataKey={metric === "revenue" ? "revenue" : "orders"}
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </LineChart>
               </ResponsiveContainer>
-            </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* Top Products (from API) */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{t("dashboard.topProducts") || "Top Products"}</CardTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-primary"
-              onClick={() => updateAdminState?.({ currentScreen: "products" })}
-            >
-              {t("common.viewAll") || "View All"} <ArrowRight className="w-4 h-4 ml-1" />
-            </Button>
+          <CardHeader>
+            <CardTitle>{t("dashboard.quickActions", "Quick actions")}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {(data.topProducts || []).slice(0, 6).map((p, index) => (
-                <div key={p.productId} className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                      <span className="text-primary text-xs font-medium">{index + 1}</span>
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{p.name}</p>
-                      <p className="text-xs text-gray-600">
-                        {p.qty} {t("dashboard.sold") || "sold"}
-                      </p>
-                    </div>
+          <CardContent className="space-y-3">
+            <Button variant="outline" className="w-full justify-between" onClick={() => updateAdminState?.({ currentScreen: "products" })}>
+              {t("dashboard.manageProducts", "Manage products")}
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+            <Button variant="outline" className="w-full justify-between" onClick={() => updateAdminState?.({ currentScreen: "orders" })}>
+              {t("dashboard.viewOrders", "View orders")}
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+            <div className="rounded-lg bg-muted p-3 space-y-2">
+              <p className="text-xs text-muted-foreground">{t("dashboard.lowStock", "Low stock alerts")}</p>
+              {lowStock.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t("dashboard.none", "All good for now")}</p>
+              ) : (
+                lowStock.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between text-sm">
+                    <span>{item.name}</span>
+                    <Badge variant="secondary">
+                      <Flame className="w-3 h-3 mr-1" /> {item.stock}
+                    </Badge>
                   </div>
-                </div>
-              ))}
-              {!data.topProducts?.length && (
-                <div className="text-sm text-gray-500">{t("app.table.noData")}</div>
+                ))
               )}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Recent Orders + Performance-like metrics sourced from API */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Orders */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{t("dashboard.recentOrders")}</CardTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-primary"
-              onClick={() => updateAdminState?.({ currentScreen: "orders" })}
-            >
-              {t("common.viewAll") || "View All"} <ArrowRight className="w-4 h-4 ml-1" />
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {data.recent?.length ? (
-                data.recent.map((o) => (
-                  <div
-                    key={o.id}
-                    className="flex items-center justify-between p-3 rounded-lg border hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-sm">#{o.id}</span>
-                        <span className="text-xs text-gray-500">{fmtDateTime(o.createdAt)}</span>
-                      </div>
-                      <p className="text-sm text-gray-600">
-                        {o.user?.name || o.user?.phone || "-"}
-                      </p>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <span className="font-medium">{fmtEGP(o.totalCents)}</span>
-                      <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(o.status)}`}>
-                        {o.status}
-                      </span>
-                      <Button variant="ghost" size="sm">
-                        <Eye className="w-3 h-3" />
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-sm text-gray-500">{t("app.table.noData")}</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <DataList
+          title={t("dashboard.topCategories", "Top categories")}
+          description={t("dashboard.topCategoriesHint", "Based on orders for the selected period")}
+          emptyLabel={t("dashboard.noData")}
+          loading={summaryQuery.isLoading}
+          items={topCategories.map((item) => ({
+            id: item.categoryId,
+            name: item.name,
+            value: metric === "revenue" && item.revenueCents ? fmtEGP(item.revenueCents) : `${item.orders} ${t("dashboard.orders", "Orders")}`,
+          }))}
+        />
+        <DataList
+          title={t("dashboard.topProducts", "Top products")}
+          description={t("dashboard.topProductsHint", "Bestsellers by quantity")}
+          emptyLabel={t("dashboard.noData")}
+          loading={summaryQuery.isLoading}
+          items={topProducts.map((product) => ({
+            id: product.productId,
+            name: product.name,
+            value: `${product.qty} ${t("dashboard.sold", "Sold")}`,
+          }))}
+        />
+      </div>
 
-        {/* Performance-like panels fed by API (AOV + Low Stock + Customers) */}
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>{t("dashboard.metrics") || "Performance Metrics"}</CardTitle>
+            <CardTitle>{t("dashboard.recentOrders", "Recent orders")}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <div>
-                  <p className="text-sm font-medium text-green-800">
-                    {t("dashboard.avgOrder") || "Average Order Value"}
-                  </p>
-                  <p className="text-xs text-green-600">{t("dashboard.last30d") || "Last 30 days"}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold text-green-800">{fmtEGP(data.sales.avgOrderValueCents)}</p>
-                  <div className="flex items-center text-green-600">
-                    <TrendingUp className="w-3 h-3 mr-1" />
-                    <span className="text-xs">—</span>
+          <CardContent className="space-y-3">
+            {summaryQuery.isLoading ? (
+              <Skeleton className="h-40" />
+            ) : recentOrders.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t("dashboard.noRecent", "No recent orders")}</p>
+            ) : (
+              recentOrders.map((order) => (
+                <div key={order.id} className="border rounded-lg p-3 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">#{order.id}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(order.createdAt).toLocaleString(i18n.language === "ar" ? "ar-EG" : undefined)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold">{fmtEGP(order.totalCents)}</p>
+                    <Badge variant="secondary">{order.status}</Badge>
                   </div>
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                <div>
-                  <p className="text-sm font-medium text-blue-800">
-                    {t("dashboard.customers") || "Customers"}
-                  </p>
-                  <p className="text-xs text-blue-600">{t("dashboard.total") || "Total"}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold text-blue-800">{data.customersCount}</p>
-                  <div className="flex items-center text-blue-600">
-                    <TrendingUp className="w-3 h-3 mr-1" />
-                    <span className="text-xs">—</span>
+              ))
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("dashboard.statusBreakdown", "Status breakdown")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {summaryQuery.isLoading ? (
+              <Skeleton className="h-40" />
+            ) : (
+              summary?.byStatus?.map((status) => (
+                <div key={status.status} className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium capitalize">{status.status.toLowerCase()}</p>
+                    <p className="text-xs text-muted-foreground">{t("dashboard.orders", "Orders")}</p>
                   </div>
+                  <Badge>{status._count.status}</Badge>
                 </div>
-              </div>
-
-              <div className="p-3 bg-purple-50 rounded-lg">
-                <p className="text-sm font-medium text-purple-800">
-                  {t("dashboard.lowStock") || "Low Stock"}
-                </p>
-                <div className="mt-2 space-y-2">
-                  {(data.lowStock || []).slice(0, 4).map((it) => (
-                    <div key={it.id} className="flex items-center justify-between text-sm">
-                      <span className="truncate">{it.name}</span>
-                      <span className="font-semibold">{it.stock}</span>
-                    </div>
-                  ))}
-                  {!data.lowStock?.length && (
-                    <div className="text-sm text-purple-700/80">{t("app.table.noData")}</div>
-                  )}
-                </div>
-              </div>
-            </div>
+              ))
+            )}
           </CardContent>
         </Card>
       </div>
     </div>
+  );
+}
+
+function fmtCurrency(value: number, language: string) {
+  try {
+    return new Intl.NumberFormat(language === "ar" ? "ar-EG" : "en-EG", {
+      style: "currency",
+      currency: "EGP",
+      maximumFractionDigits: 0,
+    }).format(value);
+  } catch {
+    return `EGP ${value}`;
+  }
+}
+
+function formatTooltip(value: number, metric: MetricOption, language: string) {
+  if (metric === "revenue") {
+    return fmtCurrency(value, language);
+  }
+  return `${value} orders`;
+}
+
+type DataListProps = {
+  title: string;
+  description: string;
+  emptyLabel: string;
+  loading: boolean;
+  items: Array<{ id: string; name: string; value: string }>;
+};
+
+function DataList({ title, description, emptyLabel, loading, items }: DataListProps) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading ? (
+          <Skeleton className="h-36" />
+        ) : items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{emptyLabel}</p>
+        ) : (
+          items.map((item) => (
+            <div key={item.id} className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">{item.name}</p>
+              </div>
+              <span className="text-sm text-muted-foreground">{item.value}</span>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
   );
 }

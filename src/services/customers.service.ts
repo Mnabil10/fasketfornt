@@ -6,11 +6,14 @@ export type Customer = {
   email?: string;
   role: 'CUSTOMER' | 'ADMIN' | 'STAFF' | string;
   createdAt: string;
+  ordersCount?: number;
+  totalSpentCents?: number;
+  loyaltyTier?: string;
 };
 export type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 
 export async function listCustomers(params?: { q?: string; page?: number; pageSize?: number }) {
-  const { data } = await api.get<Paged<Customer>>("/api/v1/admin/customers", { params: { ...params, _ts: Date.now() } });
+  const { data } = await api.get<Paged<Customer>>("/api/v1/admin/customers", { params });
   return data;
 }
 export async function getCustomer(id: string) {

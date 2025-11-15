@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -10,6 +10,7 @@ import { useAuth } from "../../auth/AuthProvider";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ShoppingCartIcon } from "lucide-react";
 import BrandLogo from "../common/BrandLogo";
+import { useDirection } from "../../hooks/useDirection";
 
 // 1) Helpers: trim + إزالة مسافات خفية + تحويل أرقام عربية/فارسي إلى لاتيني
 function normalizeDigits(s: string) {
@@ -28,14 +29,24 @@ function cleanPhone(raw: string) {
   return t.replace(/(?!^)\+/g, "").trim();
 }
 
-// 2) Zod schema (مرن): فقط نتأكد إن فيه 8–15 رقم مع (+) اختياري في البداية
-const phoneSchema = z
+function isEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
+}
+
+// 2) Identifier schema: phone or email
+const identifierSchema = z
   .string()
-  .transform((v) => cleanPhone(v))
-  .refine((v) => /^(\+?\d{8,15})$/.test(v), { message: "invalid_phone" });
+  .transform((v) => normalizeDigits(v).trim())
+  .refine((v) => {
+    if (!v) return false;
+    if (isEmail(v)) return true;
+    const cleaned = cleanPhone(v);
+    return /^(\+?\d{8,15})$/.test(cleaned);
+  }, { message: "invalid_identifier" })
+  .transform((v) => (isEmail(v) ? v.toLowerCase() : cleanPhone(v)));
 
 const schema = z.object({
-  phone: phoneSchema,
+  identifier: identifierSchema,
   password: z.string().min(4, { message: "invalid_password" }).max(128)
 });
 
@@ -47,39 +58,39 @@ export default function SignIn() {
   const navigate = useNavigate();
   const location = useLocation() as any;
   const from = location.state?.from?.pathname || "/";
+  useDirection();
 
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
   const { register, handleSubmit, formState: { errors }, setValue } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { phone: "", password: "" },
+    defaultValues: { identifier: "", password: "" },
     mode: "onSubmit"
   });
-
-  useEffect(() => {
-    const dir = i18n.language === "ar" ? "rtl" : "ltr";
-    document.documentElement.dir = dir;
-    document.documentElement.lang = i18n.language;
-  }, [i18n.language]);
 
   async function onSubmit(values: FormValues) {
     setServerError(null);
     try {
       setLoading(true);
       // نضمن تنظيف الرقم قبل الإرسال
-      const phone = cleanPhone(values.phone);
-      setValue("phone", phone, { shouldValidate: false });
+      const identifier = values.identifier;
+      setValue("identifier", identifier, { shouldValidate: false });
 
-      const res = await adminLogin(phone, values.password);
+      const res = await adminLogin(identifier, values.password);
 
       // لو الحساب مش ADMIN نمنع الدخول
-      if (res.user?.role !== "ADMIN") {
+      const normalizedRole = (res.user?.role || "").toUpperCase();
+      if (!["ADMIN", "STAFF"].includes(normalizedRole)) {
         setServerError(t("auth.not_admin") as string);
         return;
       }
 
-      signIn({ accessToken: res.accessToken, refreshToken: res.refreshToken, user: res.user });
+      signIn({
+        accessToken: res.accessToken,
+        refreshToken: res.refreshToken,
+        user: { ...res.user, role: normalizedRole }
+      });
       navigate(from, { replace: true });
     } catch (e: any) {
       // إظهار رسالة الخادم لو موجودة
@@ -115,16 +126,19 @@ export default function SignIn() {
 
           <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
             <div>
-              <label className="block text-sm mb-1">{t("auth.phone")}</label>
+              <label className="block text-sm mb-1">
+                {t("auth.identifier_label", "Phone or Email")}
+              </label>
               <Input
-                type="tel"
-                inputMode="numeric"
-                placeholder={t("auth.phone_placeholder") as string}
+                type="text"
+                placeholder={t("auth.identifier_placeholder", "+201234567890 or user@fasket.com") as string}
                 className={`h-11 ${i18n.language === "ar" ? "text-right" : ""}`}
-                {...register("phone")}
+                {...register("identifier")}
               />
-              {errors.phone && (
-                <p className="text-xs text-red-600 mt-1">{t("auth.invalid_phone")}</p>
+              {errors.identifier && (
+                <p className="text-xs text-red-600 mt-1">
+                  {t("auth.invalid_identifier", "Enter a valid phone number or email")}
+                </p>
               )}
             </div>
 

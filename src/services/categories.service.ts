@@ -14,10 +14,35 @@ export type Category = {
 };
 export type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 
+type CategoryPayload = Partial<Category> & { imageUrl?: string | null };
+
+function buildCategoryFormData(body: CategoryPayload, imageFile?: File | null) {
+  const fd = new FormData();
+  if (body.name != null) fd.append("name", String(body.name));
+  if (body.nameAr != null) fd.append("nameAr", String(body.nameAr ?? ""));
+  if (body.slug != null) fd.append("slug", String(body.slug));
+  if (body.isActive != null) fd.append("isActive", body.isActive ? "true" : "false");
+  if (body.sortOrder != null && Number.isFinite(Number(body.sortOrder))) {
+    fd.append("sortOrder", String(Math.trunc(Number(body.sortOrder))));
+  }
+  if (body.parentId !== undefined) {
+    const parent = body.parentId === null ? "" : String(body.parentId);
+    fd.append("parentId", parent);
+  }
+  if (body.imageUrl) fd.append("imageUrl", body.imageUrl);
+  if (imageFile) fd.append("image", imageFile, imageFile.name || "image");
+  return fd;
+}
+
 export async function listCategories(params?: {
-  q?: string; parentId?: string; isActive?: boolean; page?: number; pageSize?: number;
+  q?: string;
+  parentId?: string;
+  isActive?: boolean;
+  page?: number;
+  pageSize?: number;
+  sort?: string;
 }) {
-  const { data } = await api.get<Paged<Category>>("/api/v1/admin/categories", { params: { ...params, _ts: Date.now() } });
+  const { data } = await api.get<Paged<Category>>("/api/v1/admin/categories", { params });
   return data;
 }
 export async function getCategory(id: string) {
@@ -25,61 +50,43 @@ export async function getCategory(id: string) {
   return data;
 }
 
-// Create category using multipart/form-data (supports image file upload)
-export async function createCategory(
-  body: Partial<Category>,
-  imageFile?: File | null
-) {
-  // Use fetch + FormData to mirror backend curl example
-  const fd = new FormData();
-  if (body.name != null) fd.append("name", String(body.name));
-  if (body.nameAr != null) fd.append("nameAr", String(body.nameAr ?? ""));
-  if (body.slug != null) fd.append("slug", String(body.slug));
-  if (body.isActive != null) fd.append("isActive", String(!!body.isActive));
-  if (body.sortOrder != null) fd.append("sortOrder", String(Math.trunc(Number(body.sortOrder))));
-  if (body.parentId != null) fd.append("parentId", body.parentId ? String(body.parentId) : "");
-  if (imageFile) fd.append("image", imageFile, imageFile.name || "image");
-
-  const token = localStorage.getItem("fasket_admin_token") || "";
-  const res = await fetch(`${api.defaults.baseURL}/api/v1/admin/categories`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    body: fd,
-  });
-  const data = await res.json();
-  if (!res.ok) throw { response: { status: res.status, data } };
-  return data as Category;
+// Create category using multipart/form-data (supports image file upload or remote URL)
+export async function createCategory(body: CategoryPayload, imageFile?: File | null) {
+  const fd = buildCategoryFormData(body, imageFile);
+  const { data } = await api.post<Category>("/api/v1/admin/categories", fd);
+  return data;
 }
 
 // Update category; if an image file is provided, send multipart/form-data, else JSON
-export async function updateCategory(
-  id: string,
-  body: Partial<Category>,
-  imageFile?: File | null
-) {
+export async function updateCategory(id: string, body: CategoryPayload, imageFile?: File | null) {
   if (imageFile) {
-    const fd = new FormData();
-    if (body.name != null) fd.append("name", String(body.name));
-    if (body.nameAr != null) fd.append("nameAr", String(body.nameAr ?? ""));
-    if (body.slug != null) fd.append("slug", String(body.slug));
-    if (body.isActive != null) fd.append("isActive", String(!!body.isActive));
-    if (body.sortOrder != null) fd.append("sortOrder", String(Math.trunc(Number(body.sortOrder))));
-    if (body.parentId != null) fd.append("parentId", body.parentId ? String(body.parentId) : "");
-    fd.append("image", imageFile, imageFile.name || "image");
-
-    const token = localStorage.getItem("fasket_admin_token") || "";
-    const res = await fetch(`${api.defaults.baseURL}/api/v1/admin/categories/${id}`, {
-      method: "PATCH",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      body: fd,
-    });
-    const data = await res.json();
-    if (!res.ok) throw { response: { status: res.status, data } };
-    return data as Category;
+    const fd = buildCategoryFormData(body, imageFile);
+    const { data } = await api.patch<Category>(`/api/v1/admin/categories/${id}`, fd);
+    return data;
   }
-  const { data } = await api.patch<Category>(`/api/v1/admin/categories/${id}`, body);
+  const payload: CategoryPayload = { ...body };
+  if (payload.sortOrder != null && Number.isFinite(Number(payload.sortOrder))) {
+    payload.sortOrder = Math.trunc(Number(payload.sortOrder));
+  }
+  const { data } = await api.patch<Category>(`/api/v1/admin/categories/${id}`, payload);
   return data;
 }
+
+export async function reorderCategories(order: Array<{ id: string; sortOrder: number }>) {
+  try {
+    const { data } = await api.post<{ ok: boolean }>(`/api/v1/admin/categories/reorder`, { order });
+    return data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    if (axiosError?.response?.status === 404) {
+      // Backend may not implement bulk reorder; fallback to sequential updates
+      await Promise.all(order.map((entry) => updateCategory(entry.id, { sortOrder: entry.sortOrder })));
+      return { ok: true };
+    }
+    throw error;
+  }
+}
+
 export async function deleteCategory(id: string) {
   const { data } = await api.delete<{ ok: true }>(`/api/v1/admin/categories/${id}`);
   return data;

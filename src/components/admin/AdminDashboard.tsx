@@ -44,6 +44,7 @@ import { useTranslation } from "react-i18next";
 import BrandLogo from "../common/BrandLogo";
 import { fetchDashboard, type DashboardSummary } from "../../services/dashboard.service";
 import { useAuth } from "../../auth/AuthProvider";
+import { useDirection } from "../../hooks/useDirection";
 
 export type AdminScreen =
   | "dashboard"
@@ -71,21 +72,28 @@ export type ScreenProps = {
 export function AdminDashboard() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
+  useDirection();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [adminState, setAdminState] = useState<AdminState>({
     currentScreen: "dashboard",
   });
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  // Auto set dir/lang (RTL)
-  useEffect(() => {
-    const dir = i18n.language === "ar" ? "rtl" : "ltr";
-    document.documentElement.dir = dir;
-    document.documentElement.lang = i18n.language;
-  }, [i18n.language]);
+  const role = (user?.role || "").toUpperCase();
+  const accessibleScreens = useMemo<AdminScreen[]>(
+    () =>
+      role === "ADMIN"
+        ? ["dashboard", "categories", "products", "hot-offers", "orders", "customers", "coupons", "settings"]
+        : ["categories", "products", "hot-offers", "orders", "customers"],
+    [role]
+  );
 
-  const updateAdminState = (updates: Partial<AdminState>) =>
+  const updateAdminState = (updates: Partial<AdminState>) => {
+    if (updates.currentScreen && !accessibleScreens.includes(updates.currentScreen)) {
+      return;
+    }
     setAdminState((prev) => ({ ...prev, ...updates }));
+  };
 
   // Live notifications from recent orders + low stock
   useEffect(() => {
@@ -101,11 +109,10 @@ export function AdminDashboard() {
 
   // If staff lands on dashboard, redirect to products
   useEffect(() => {
-    const role = (user?.role || '').toUpperCase();
-    if (role !== 'ADMIN' && adminState.currentScreen === 'dashboard') {
-      updateAdminState({ currentScreen: 'products' });
+    if (role !== "ADMIN" && adminState.currentScreen === "dashboard") {
+      updateAdminState({ currentScreen: "products" });
     }
-  }, [user?.role]);
+  }, [role, adminState.currentScreen, updateAdminState]);
   const notifications = useMemo(() => {
     const items: Array<{ id: string|number; title: string; message: string; time?: string; type: string; payload?: Record<string, any> }>=[];
     if (summary?.recent?.length) {
@@ -153,13 +160,8 @@ export function AdminDashboard() {
       { id: "settings" as const, icon: Settings, badge: null },
     ] as Array<{ id: AdminScreen; icon: any; badge: number | null }>;
     // Role-based filtering: staff can see customers for password reset
-    const role = (user?.role || '').toUpperCase();
-    if (role !== 'ADMIN') {
-      const allowed: AdminScreen[] = ['categories','products','hot-offers','orders','customers'];
-      return all.filter(i => allowed.includes(i.id));
-    }
-    return all;
-  }, [summary, user?.role]);
+    return all.filter((item) => accessibleScreens.includes(item.id));
+  }, [summary, accessibleScreens]);
 
   const labelFor = (id: AdminScreen) => t(`menu.${id}`);
 
