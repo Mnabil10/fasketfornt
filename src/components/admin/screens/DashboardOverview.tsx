@@ -164,26 +164,28 @@ export function DashboardOverview({ updateAdminState }: Props) {
             {seriesQuery.isLoading ? (
               <Skeleton className="h-full" />
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ left: 12, right: 12 }}>
-                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 12 }} />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => (metric === "revenue" ? fmtCurrency(value, i18n.language) : value)}
-                  />
-                  <Tooltip formatter={(value: number) => formatTooltip(value, metric, i18n.language)} />
-                  <Line
-                    type="monotone"
-                    dataKey={metric === "revenue" ? "revenue" : "orders"}
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <div className="h-full w-full min-h-[240px]">
+                <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={200}>
+                  <LineChart data={chartData} margin={{ left: 12, right: 12 }}>
+                    <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+                    <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 12 }} />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(value) => (metric === "revenue" ? fmtCurrency(value, i18n.language) : value)}
+                    />
+                    <Tooltip formatter={(value: number) => formatTooltip(value, metric, i18n.language)} />
+                    <Line
+                      type="monotone"
+                      dataKey={metric === "revenue" ? "revenue" : "orders"}
+                      stroke="hsl(var(--primary))"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             )}
           </CardContent>
         </Card>

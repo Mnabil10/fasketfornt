@@ -19,35 +19,41 @@
       "upload": "رفع",
       "close": "إغلاق",
       "apply": "تطبيق",
-      "reset": "إعادة ضبط",
-      "title": "إجراءات",
-      "actions": "إجراءات",
-      "update": "تحديث"
+      "reset": "إعادة تعيين",
+      "title": "الإجراءات",
+      "actions": "الإجراءات",
+      "update": "تحديث",
+      "clear": "مسح",
+      "remove": "إزالة",
+      "retry": "حاول مجدداً",
+      "set": "تعيين"
     },
     "table": {
       "noData": "لا توجد بيانات",
-      "page": "صفحة",
+      "page": "الصفحة",
       "of": "من",
       "rows": "صفوف",
-      "total": "الإجمالي"
+      "total": "الإجمالي",
+      "error": "يتعذر تحميل المنتجات الآن",
+      "pageSize": "عدد الصفوف في الصفحة"
     },
     "money": {
-      "egp": "ج.م"
+      "egp": "جنيه"
     },
     "notifications": {
       "saved": "تم الحفظ بنجاح",
       "deleted": "تم الحذف بنجاح",
       "updated": "تم التحديث بنجاح",
-      "error": "حدث خطأ"
+      "error": "حدث خطأ ما"
     },
     "yes": "نعم",
     "no": "لا",
-    "active": "نشط",
-    "inactive": "غير نشط"
+    "active": "مفعل",
+    "inactive": "غير مفعل",
+    "saving": "جارٍ الحفظ..."
   },
-
   "nav": {
-    "dashboard": "نظرة عامة",
+    "dashboard": "لوحة التحكم",
     "categories": "التصنيفات",
     "products": "المنتجات",
     "orders": "الطلبات",
@@ -55,26 +61,25 @@
     "settings": "الإعدادات",
     "logout": "تسجيل الخروج"
   },
-
   "filters": {
     "searchPlaceholder": "ابحث بالاسم أو الرقم...",
     "status": "الحالة",
     "from": "من تاريخ",
     "to": "إلى تاريخ",
     "category": "التصنيف",
-    "inStock": "متوفر بالمخزون",
-    "minPrice": "أقل سعر (قرش)",
-    "maxPrice": "أقصى سعر (قرش)"
+    "inStock": "متوفر في المخزون",
+    "minPrice": "أقل سعر (بالقروش)",
+    "maxPrice": "أعلى سعر (بالقروش)",
+    "reset": "إعادة ضبط الفلاتر"
   },
-
   "dashboard": {
-    "revenue": "الإيراد",
+    "revenue": "الإيرادات",
     "orders": "الطلبات",
     "avgOrder": "متوسط قيمة الطلب",
     "customers": "العملاء",
     "recentOrders": "أحدث الطلبات",
     "statusBreakdown": "توزيع الحالات",
-    "topProducts": "المنتجات الأعلى مبيعًا",
+    "topProducts": "المنتجات الأكثر مبيعاً",
     "lowStock": "نقص المخزون",
     "timeseriesTitle": "المبيعات حسب الفترة",
     "orderId": "رقم الطلب",
@@ -82,24 +87,41 @@
     "total": "الإجمالي",
     "createdAt": "تاريخ الإنشاء",
     "status": "الحالة",
-    "salesOverview": "نظرة عامة على المبيعات اليومية",
-    "sold": "مباع",
+    "salesOverview": "نظرة يومية على المبيعات",
+    "sold": "تم بيع",
     "metrics": "مؤشرات الأداء",
-    "last30d": "آخر 30 يومًا"
+    "last30d": "آخر 30 يوماً",
+    "manageProducts": "إدارة المنتجات",
+    "metric_orders": "الطلبات",
+    "metric_revenue": "الإيرادات",
+    "noData": "لا توجد بيانات",
+    "noRecent": "لا توجد طلبات حديثة",
+    "none": "لا شيء مقلق الآن",
+    "quickActions": "إجراءات سريعة",
+    "range_30": "آخر 30 يوماً",
+    "range_7": "آخر 7 أيام",
+    "range_90": "آخر 90 يوماً",
+    "salesHint": "الإيرادات والطلبات خلال الفترة المحددة",
+    "salesTrend": "اتجاه المبيعات",
+    "subtitle": "راقب المبيعات والطلبات والمخزون في الوقت الفعلي",
+    "title": "نظرة عامة على التحليلات",
+    "topCategories": "أعلى التصنيفات",
+    "topCategoriesHint": "استناداً إلى الطلبات في الفترة المختارة",
+    "topProductsHint": "الأكثر مبيعاً حسب الكمية",
+    "viewOrders": "عرض الطلبات"
   },
-
   "categories": {
     "title": "التصنيفات",
-    "subtitle": "نظّم منتجاتك ضمن تصنيفات",
+    "subtitle": "نظّم منتجاتك في أقسام",
     "titleList": "قائمة التصنيفات",
-    "image": "الصورة",
+    "image": "صورة",
     "name": "الاسم",
-    "slug": "المعرّف (Slug)",
+    "slug": "المعرف (Slug)",
     "active": "مفعل",
     "imageUrl": "رابط الصورة",
     "sortOrder": "ترتيب العرض",
-    "parent": "تصنيف أب",
-    "root": "تصنيف جذري",
+    "parent": "التصنيف الأب",
+    "root": "التصنيف الرئيسي",
     "addNew": "إضافة تصنيف",
     "editCategory": "تعديل التصنيف",
     "deleteTitle": "حذف التصنيف",
@@ -107,9 +129,18 @@
     "created": "تم إنشاء التصنيف",
     "updated": "تم تحديث التصنيف",
     "deleted": "تم حذف التصنيف",
-    "manage": "إدارة التصنيفات"
+    "manage": "إدارة التصنيفات",
+    "nameAr": "الاسم بالعربية",
+    "delete": "حذف التصنيف",
+    "delete_confirm": "هذا الإجراء لا يمكن الرجوع عنه.",
+    "edit": "تعديل التصنيف",
+    "emptyDescription": "ابدأ بإنشاء أول تصنيف.",
+    "emptyTitle": "لا توجد تصنيفات بعد",
+    "form_subtitle": "أدخل الأسماء باللغتين وحدد ترتيب الظهور",
+    "image_hint": "أسقط صورة أو الصق رابطاً",
+    "loadError": "تعذر تحميل التصنيفات",
+    "reorder_error": "تعذر إعادة ترتيب التصنيفات"
   },
-
   "products": {
     "title": "المنتجات",
     "subtitle": "إدارة كتالوج المنتجات",
@@ -117,9 +148,17 @@
     "slug": "المعرّف (Slug)",
     "description": "الوصف",
     "imageUrl": "الصورة الرئيسية",
-    "images": "صور إضافية",
-    "price": "السعر (بالجنيه)",
-    "salePrice": "سعر الخصم (بالجنيه)",
+    "images": {
+      "empty": "لا توجد صور في المعرض",
+      "label": "الصور الإضافية"
+    },
+    "nameAr": "الاسم بالعربية",
+    "descriptionAr": "الوصف بالعربية",
+    "isHotOffer": "عرض مميز",
+    "hotOffers": "العروض المميزة",
+    "hotOffersSubtitle": "منتجات محددة كعروض ساخنة",
+    "price": "السعر (جنيه)",
+    "salePrice": "سعر العرض (جنيه)",
     "stock": "المخزون",
     "status": "الحالة",
     "category": "التصنيف",
@@ -130,34 +169,34 @@
     "updated": "تم تحديث المنتج",
     "discount": "الخصم",
     "off": "خصم",
-    "invalid_slug": "صيغة المعرّف غير صالحة",
+    "invalid_slug": "صيغة المعرّف غير صحيحة",
     "invalid_price": "سعر غير صالح",
-    "invalid_sale_price": "سعر الخصم غير صالح",
-    "invalid_stock": "كمية غير صالحة",
+    "invalid_sale_price": "سعر العرض غير صالح",
+    "invalid_stock": "مخزون غير صالح",
     "upload": {
       "bad_type": "نوع ملف غير مدعوم",
-      "too_large": "الملف كبير جدًا"
+      "too_large": "الملف كبير جداً"
     },
     "form": {
-      "basic": "المعلومات الأساسية",
+      "basic": "معلومات أساسية",
       "pricing": "التسعير",
       "inventory": "المخزون",
       "media": "الوسائط"
     },
     "stats": {
       "total": "إجمالي المنتجات",
-      "active": "منتجات نشطة",
-      "low": "نقص المخزون",
-      "out": "غير متوفر"
+      "active": "المنتجات المفعلة",
+      "low": "منتجات منخفضة المخزون",
+      "out": "منتجات نفدت"
     },
     "stockStatuses": {
-      "out": "غير متوفر",
-      "low": "نقص المخزون",
+      "out": "نفد المخزون",
+      "low": "مخزون منخفض",
       "in": "متوفر"
     },
     "statuses": {
       "DRAFT": "مسودة",
-      "ACTIVE": "نشط",
+      "ACTIVE": "مفعل",
       "HIDDEN": "مخفي",
       "DISCONTINUED": "متوقف"
     },
@@ -165,28 +204,86 @@
     "id": "المعرّف",
     "units": "الوحدات",
     "delete": "حذف المنتج",
-    "deleteConfirm": "هل أنت متأكد من حذف هذا المنتج؟ هذا الإجراء لا يمكن التراجع عنه.",
+    "deleteConfirm": "هل أنت متأكد من حذف هذا المنتج؟ هذا الإجراء لا يمكن الرجوع عنه.",
     "trend": {
       "good": "جيد",
       "low": "منخفض"
     },
     "media": {
-      "hint": "ألصق روابط الصور بالأعلى (المعاينة تستخدم الصورة الرئيسية)"
+      "hint": "الصق روابط الصور أعلاه (المعاينة تستخدم الصورة الرئيسية)"
     },
-    "add": "إضافة منتج"
-  },
+    "add": "إضافة منتج",
+    "bulkImport": {
+      "chooseFile": "اختر ملفاً",
+      "created": "تم الإنشاء",
+      "downloadTemplate": "تحميل القالب",
+      "dropzone": "اسحب وأسقط ملف إكسل هنا",
+      "error": "فشل الرفع",
+      "failedRow": "فشل",
+      "instructions1": "حمّل القالب واملأه ثم ارفع الملف.",
+      "message": "الرسالة",
+      "noFile": "اختر ملفاً",
+      "noRows": "لا توجد تفاصيل للصفوف",
+      "product": "المنتج",
+      "row": "الصف",
+      "startUpload": "بدء الرفع",
+      "status": "الحالة",
+      "success": "اكتمل الرفع الجماعي",
+      "successRow": "ناجح",
+      "templateDownloaded": "تم تحميل القالب",
+      "templateError": "تعذر تحميل القالب",
+      "updated": "تم التحديث",
+      "uploading": "جارٍ الرفع..."
+    },
+    "category_selected": "تم اختيار تصنيف",
+    "createdAt": "تاريخ الإنشاء",
+    "formSubtitle": "أدخل تفاصيل المنتج أدناه",
+    "gallery": "المعرض",
+    "hotOffer": "عرض مميز",
+    "hotOffer_hint": "تسليط الضوء على المنتج في الواجهة وأقسام العروض",
+    "importExcel": "استيراد المنتجات من إكسل",
+    "invalid_price_positive": "يجب أن يكون السعر أكبر من صفر",
+    "mainImage": "الغلاف",
+    "maxPrice": "أعلى سعر",
+    "minPrice": "أقل سعر",
+    "noResults": "لا توجد منتجات مطابقة للمرشحات المحددة",
+    "noResultsHint": "جرّب تعديل المرشحات أو عبارة البحث.",
+    "not_found": "لم يتم العثور على المنتج",
+    "permissions": {
+      "adminOnly": "يمكن للمسؤولين فقط إنشاء المنتجات أو تغيير الأسعار"
+    },
+    "price_locked": "يمكن للمسؤولين فقط تحديث الأسعار",
+    "product": "المنتج",
+    "sort": {
+      "direction": "اتجاه الفرز",
+      "label": "الفرز حسب",
+      "createdAt": "تاريخ الإنشاء",
+      "price": "السعر",
+      "name": "الاسم",
+      "stock": "المخزون",
+      "asc": "تصاعدي",
+      "desc": "تنازلي"
 
+    },
+    "stockFilters": {
+      "in": "متوفر",
+      "low": "مخزون منخفض",
+      "out": "نفد المخزون",
+      "all": "الكل"
+    },
+    "tableTitle": "المنتجات"
+  },
   "orders": {
     "title": "الطلبات",
-    "subtitle": "تتبع وادِر طلبات العملاء",
+    "subtitle": "تتبّع وادِر طلبات العملاء",
     "status": "الحالة",
     "from": "من",
     "to": "إلى",
     "customer": "العميل",
-    "minTotal": "أقل إجمالي (قرش)",
-    "maxTotal": "أقصى إجمالي (قرش)",
+    "minTotal": "أقل إجمالي (بالقروش)",
+    "maxTotal": "أعلى إجمالي (بالقروش)",
     "detail": "تفاصيل الطلب",
-    "subtotal": "المجموع الفرعي",
+    "subtotal": "الإجمالي الفرعي",
     "shipping": "الشحن",
     "discount": "الخصم",
     "total": "الإجمالي",
@@ -195,27 +292,57 @@
     "qty": "الكمية",
     "price": "السعر",
     "history": "سجل الحالة",
+    "coupon": "قسيمة",
+    "cartId": "معرّف السلة",
+    "notes": "ملاحظات",
     "updateStatus": "تحديث حالة الطلب",
     "note": "ملاحظة",
     "actorId": "معرّف الموظف (اختياري)",
     "updated": "تم تحديث حالة الطلب",
     "payment": "الدفع",
-    "each": "لكل وحدة",
-    "totalOnPage": "الطلبات (هذه الصفحة)",
-    "revenueOnPage": "الإيراد (هذه الصفحة)",
+    "each": "لكل قطعة",
+    "totalOnPage": "الطلبات (لهذه الصفحة)",
+    "revenueOnPage": "الإيرادات (لهذه الصفحة)",
     "listTitle": "الطلبات ({{count}})",
     "notePlaceholder": "أضف ملاحظة (اختياري)...",
-    "noteHint": "تلميح: اضغط Ctrl+Enter لحفظ الملاحظة مع الحالة الحالية",
+    "noteHint": "ملاحظة: اضغط Ctrl+Enter لحفظ الملاحظة مع الحالة الحالية",
     "statuses": {
-      "PENDING": "معلق",
-      "PROCESSING": "قيد التحضير",
+      "PENDING": "قيد الانتظار",
+      "PROCESSING": "قيد المعالجة",
       "OUT_FOR_DELIVERY": "خرج للتسليم",
       "DELIVERED": "تم التسليم",
-      "CANCELED": "ملغي"
+      "CANCELED": "أُلغي"
     },
-    "viewAll": "عرض جميع الطلبات"
+    "viewAll": "عرض كل الطلبات",
+    "emptyDescription": "عدّل المرشحات أو حاول مرة أخرى لاحقاً.",
+    "emptyTitle": "لا توجد طلبات",
+    "loadError": "تعذر تحميل الطلبات",
+    "updateFailed": "تعذر تحديث الطلب"
   },
-
+  "coupons": {
+    "title": "القسائم",
+    "subtitle": "أنشئ وأدر قسائم الخصم",
+    "addNew": "قسيمة جديدة",
+    "created": "تم إنشاء القسيمة",
+    "updated": "تم تحديث القسيمة",
+    "code_required": "رمز القسيمة مطلوب",
+    "code": "الرمز",
+    "type": "النوع",
+    "percent": "نسبة",
+    "fixed": "قيمة ثابتة",
+    "value": "القيمة (بالقروش)",
+    "active": "مفعل",
+    "startsAt": "تاريخ البدء (ISO)",
+    "endsAt": "تاريخ الانتهاء (ISO)",
+    "minOrderCents": "أقل طلب (بالقروش)",
+    "maxDiscountCents": "أقصى خصم (بالقروش)",
+    "searchPlaceholder": "ابحث عن الرمز",
+    "edit": "تعديل",
+    "emptyDescription": "أنشئ قسيمة للبدء.",
+    "emptyTitle": "لا توجد قسائم",
+    "loadError": "تعذر تحميل القسائم",
+    "saveFailed": "تعذر حفظ القسيمة"
+  },
   "customers": {
     "title": "العملاء",
     "name": "الاسم",
@@ -223,9 +350,21 @@
     "email": "البريد الإلكتروني",
     "createdAt": "تاريخ الإنشاء",
     "addresses": "العناوين",
-    "orders": "الطلبات"
+    "orders": "الطلبات",
+    "resetPassword": "إعادة تعيين كلمة المرور",
+    "newPassword": "كلمة مرور جديدة",
+    "confirmPassword": "تأكيد كلمة المرور",
+    "passwordTooShort": "يجب أن تتكون كلمة المرور من 6 أحرف على الأقل",
+    "passwordMismatch": "كلمتا المرور غير متطابقتين",
+    "passwordUpdated": "تم تحديث كلمة المرور",
+    "emptyDescription": "ادعُ المستخدمين أو عدّل المرشحات.",
+    "emptyTitle": "لا يوجد عملاء بعد",
+    "loadError": "تعذر تحميل العملاء",
+    "passwordReset": "تمت إعادة تعيين كلمة المرور",
+    "resetFailed": "تعذر إعادة تعيين كلمة المرور",
+    "roleUpdateFailed": "تعذر تحديث الدور",
+    "roleUpdated": "تم تحديث الدور"
   },
-
   "settings": {
     "title": "الإعدادات",
     "general": "عام",
@@ -239,34 +378,48 @@
       "contactEmail": "بريد التواصل",
       "contactPhone": "هاتف التواصل",
       "storeAddress": "عنوان المتجر",
-      "businessHours": "ساعات العمل "
+      "businessHours": "ساعات العمل"
     },
     "deliveryFields": {
       "deliveryFee": "رسوم التوصيل",
       "freeDeliveryMinimum": "حد التوصيل المجاني",
-      "estimatedDeliveryTime": "المدة المتوقعة للتسليم",
-      "maxDeliveryRadius": "أقصى نطاق توصيل (كم)",
-      "deliveryZones": "مناطق التوصيل "
+      "estimatedDeliveryTime": "الوقت التقديري للتسليم",
+      "maxDeliveryRadius": "أقصى نطاق للتوصيل (كم)",
+      "deliveryZones": "مناطق التوصيل",
+      "noZones": "لم يتم إعداد مناطق للتوصيل بعد",
+      "zoneEnabled": "مفعل",
+      "zoneFee": "الرسوم",
+      "zoneName": "اسم المنطقة"
     },
     "paymentFields": {
-      "cashOnDelivery": "الدفع عند الاستلام ",
-      "creditCards": "بطاقات الائتمان ",
-      "digitalWallets": "المحافظ الرقمية ",
-      "stripe": "Stripe "
+      "cashOnDelivery": "الدفع عند الاستلام",
+      "creditCards": "البطاقات الائتمانية",
+      "digitalWallets": "المحافظ الرقمية",
+      "stripe": "سترايب",
+      "acceptedCards": "فيزا، ماستركارد",
+      "maxAmount": "أقصى مبلغ"
     },
     "notificationsFields": {
-      "orderNotifications": "إشعارات الطلبات ",
-      "marketingEmails": "رسائل تسويقية ",
-      "adminAlerts": "تنبيهات المدير "
+      "orderNotifications": "إشعارات الطلبات",
+      "marketingEmails": "رسائل تسويقية",
+      "adminAlerts": "تنبيهات المسؤول",
+      "frequency": "أسبوعي",
+      "lowStock": "تنبيهات نقص المخزون",
+      "newOrders": "تنبيهات الطلبات الجديدة",
+      "systemUpdates": "تحديثات النظام",
+      "threshold": "5",
+      "push": "إشعار دفع",
+      "sms": "رسالة نصية",
+      "email": "بريد إلكتروني"
     },
     "systemFields": {
       "maintenanceMode": "وضع الصيانة",
       "allowRegistrations": "السماح بالتسجيل",
-      "requireEmailVerification": "يتطلب تفعيل البريد",
-      "sessionTimeout": "مهلة الجلسة (دقيقة)",
-      "maxLoginAttempts": "الحد الأقصى لمحاولات الدخول",
-      "dataRetentionDays": "مدة الاحتفاظ بالبيانات (يوم)",
-      "backupFrequency": "تواتر النسخ الاحتياطي",
+      "requireEmailVerification": "تأكيد البريد الإلكتروني مطلوب",
+      "sessionTimeout": "مهلة الجلسة (دقائق)",
+      "maxLoginAttempts": "أقصى محاولات تسجيل الدخول",
+      "dataRetentionDays": "الاحتفاظ بالبيانات (أيام)",
+      "backupFrequency": "تكرار النسخ الاحتياطي",
       "timezone": "المنطقة الزمنية",
       "language": "اللغة",
       "currency": "العملة"
@@ -275,18 +428,30 @@
     "saveDelivery": "حفظ (التوصيل)",
     "savePayment": "حفظ (الدفع)",
     "saveNotifications": "حفظ (الإشعارات)",
-    "saveSystem": "حفظ (النظام)"
+    "saveSystem": "حفظ (النظام)",
+    "arabic": "العربية",
+    "deliverySaved": "تم حفظ إعدادات التوصيل",
+    "emptyDescription": "اضبط إعدادات المتجر للبدء.",
+    "emptyTitle": "لا توجد إعدادات متاحة",
+    "english": "الإنجليزية",
+    "generalSaved": "تم حفظ الإعدادات العامة",
+    "loadError": "تعذر تحميل الإعدادات",
+    "notificationsSaved": "تم حفظ الإشعارات",
+    "paymentSaved": "تم حفظ إعدادات الدفع",
+    "saveError": "تعذر حفظ الإعدادات",
+    "subtitle": "أدِر كل جزء من تجربة الإدارة",
+    "systemSaved": "تم حفظ إعدادات النظام"
   },
-
   "menu": {
-    "dashboard": "نظرة عامة",
+    "dashboard": "لوحة التحكم",
     "categories": "التصنيفات",
     "products": "المنتجات",
+    "hot-offers": "العروض المميزة",
     "orders": "الطلبات",
     "customers": "العملاء",
+    "coupons": "القسائم",
     "settings": "الإعدادات"
   },
-
   "common": {
     "app_name": "فاسكت",
     "admin_panel": "لوحة الإدارة",
@@ -298,32 +463,42 @@
     "new_order": "طلب جديد",
     "order_from": "طلب رقم {{id}} من {{name}}",
     "time_ago": "منذ {{time}}",
-    "low_stock": "انخفاض المخزون",
-    "low_stock_msg": "المنتج {{product}} يقترب من النفاد ({{count}} قطع)",
-    "out_of_stock": "نفاد المخزون",
-    "out_of_stock_msg": "المنتج {{product}} غير متوفر حاليًا",
+    "low_stock": "نقص في المخزون",
+    "low_stock_msg": "المنتج {{product}} أوشك على النفاد (المتبقي {{count}})",
+    "out_of_stock": "نفد المخزون",
+    "out_of_stock_msg": "المنتج {{product}} غير متوفر حالياً",
     "viewDetails": "عرض التفاصيل",
     "viewAll": "عرض الكل",
     "all": "الكل",
-    "actions": "إجراءات"
+    "actions": "الإجراءات",
+    "search": "بحث"
   },
-
   "auth": {
-    "sign_in_title": "تسجيل الدخول إلى لوحة فاسكت",
-    "sign_in_subtitle": "استخدم رقم الهاتف وكلمة المرور لتسجيل الدخول.",
+    "sign_in_title": "سجّل الدخول إلى لوحة فاسكت",
+    "sign_in_subtitle": "استخدم رقم هاتفك وكلمة المرور لتسجيل الدخول.",
     "phone": "رقم الهاتف",
     "phone_placeholder": "مثال: 01012345678",
     "password": "كلمة المرور",
     "sign_in_btn": "تسجيل الدخول",
-    "signing_in": "جاري تسجيل الدخول...",
-    "invalid_phone": "يرجى إدخال رقم هاتف صحيح",
-    "invalid_password": "يجب أن تكون كلمة المرور 4 أحرف على الأقل",
-    "login_failed": "فشل تسجيل الدخول. تحقق من رقم الهاتف وكلمة المرور.",
-    "footer_note": "تحتاج صلاحية؟ تواصل مع مسؤول النظام.",
+    "signing_in": "جارٍ تسجيل الدخول...",
+    "invalid_phone": "يرجى إدخال رقم هاتف صالح",
+    "invalid_password": "يجب ألا تقل كلمة المرور عن 4 أحرف",
+    "login_failed": "فشل تسجيل الدخول. تحقق من الهاتف وكلمة المرور.",
+    "footer_note": "بحاجة إلى صلاحية؟ تواصل مع المسؤول.",
     "forbidden_title": "تم رفض الوصول",
-    "forbidden_desc": "حسابك لا يمتلك صلاحيات المدير. يرجى تسجيل الدخول بحساب ADMIN.",
+    "forbidden_desc": "حسابك لا يملك صلاحيات المدير. سجّل بحساب ADMIN.",
     "back_to_login": "العودة لتسجيل الدخول",
     "logout": "تسجيل الخروج",
-    "not_admin": "هذا الحساب ليس مديرًا. يرجى استخدام حساب ADMIN."
-  }
+    "not_admin": "هذا الحساب ليس إدارياً. يرجى استخدام حساب ADMIN.",
+    "identifier_label": "الهاتف أو البريد الإلكتروني",
+    "identifier_placeholder": "+201234567890 أو user@fasket.com",
+    "invalid_identifier": "أدخل رقم هاتف أو بريداً إلكترونياً صالحاً",
+    "sessionExpired": "انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى"
+  },
+"confirm_password": "تأكيد كلمة المرور",
+"newPassword": "كلمة مرور جديدة",
+"passwordMismatch": "كلمتا المرور غير متطابقتين",
+"passwordTooShort": "يجب أن تتكون كلمة المرور من 6 أحرف على الأقل",
+"resetPassword": "إعادة تعيين كلمة المرور"
+
 }

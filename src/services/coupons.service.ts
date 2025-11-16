@@ -1,4 +1,5 @@
 import { api } from "../lib/api";
+import { buildQueryParams } from "../lib/query";
 
 export type CouponType = 'PERCENT' | 'FIXED';
 export type Coupon = {
@@ -17,7 +18,8 @@ export type Coupon = {
 export type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 
 export async function listCoupons(params?: { q?: string; page?: number; pageSize?: number }) {
-  const { data } = await api.get<Paged<Coupon>>("/api/v1/admin/coupons", { params });
+  const query = buildQueryParams(params);
+  const { data } = await api.get<Paged<Coupon>>("/api/v1/admin/coupons", { params: query });
   return data;
 }
 

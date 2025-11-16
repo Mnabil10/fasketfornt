@@ -1,5 +1,6 @@
 
 import { api } from "../lib/api";
+import { buildQueryParams } from "../lib/query";
 
 export type DashboardSummary = {
   sales: { totalRevenueCents: number; totalOrders: number; avgOrderValueCents: number };
@@ -12,12 +13,14 @@ export type DashboardSummary = {
 };
 
 export async function fetchDashboard(params?: { from?: string; to?: string }) {
+  const query = buildQueryParams(params);
   const { data } = await api.get<DashboardSummary>("/api/v1/admin/dashboard", {
-    params,
+    params: query,
   });
   return data;
 }
 export async function fetchDashboardTimeseries(params?: { from?: string; to?: string; granularity?: "day"|"week"|"month" }) {
-  const { data } = await api.get("/api/v1/admin/dashboard/timeseries", { params });
+  const query = buildQueryParams(params);
+  const { data } = await api.get("/api/v1/admin/dashboard/timeseries", { params: query });
   return data as Array<{ period: string; revenueCents: number; orders: number }>;
 }

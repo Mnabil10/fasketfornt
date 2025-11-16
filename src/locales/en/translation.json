@@ -22,14 +22,20 @@
       "reset": "Reset",
       "title": "Actions",
       "actions": "Actions",
-      "update": "Update"
+      "update": "Update",
+      "clear": "Clear",
+      "remove": "Remove",
+      "retry": "Retry",
+      "set": "Set"
     },
     "table": {
       "noData": "No data available",
       "page": "Page",
       "of": "of",
       "rows": "rows",
-      "total": "Total"
+      "total": "Total",
+      "error": "Unable to load products right now",
+      "pageSize": "Rows per page"
     },
     "money": {
       "egp": "EGP"
@@ -43,9 +49,9 @@
     "yes": "Yes",
     "no": "No",
     "active": "Active",
-    "inactive": "Inactive"
+    "inactive": "Inactive",
+    "saving": "Saving..."
   },
-
   "nav": {
     "dashboard": "Dashboard",
     "categories": "Categories",
@@ -55,7 +61,6 @@
     "settings": "Settings",
     "logout": "Logout"
   },
-
   "filters": {
     "searchPlaceholder": "Search by name or number...",
     "status": "Status",
@@ -64,9 +69,9 @@
     "category": "Category",
     "inStock": "In Stock",
     "minPrice": "Min Price (Cents)",
-    "maxPrice": "Max Price (Cents)"
+    "maxPrice": "Max Price (Cents)",
+    "reset": "Reset filters"
   },
-
   "dashboard": {
     "revenue": "Revenue",
     "orders": "Orders",
@@ -85,9 +90,26 @@
     "salesOverview": "Daily Sales Overview",
     "sold": "Sold",
     "metrics": "Performance Metrics",
-    "last30d": "Last 30 Days"
+    "last30d": "Last 30 Days",
+    "manageProducts": "Manage products",
+    "metric_orders": "Orders",
+    "metric_revenue": "Revenue",
+    "noData": "No data available",
+    "noRecent": "No recent orders",
+    "none": "All good for now",
+    "quickActions": "Quick actions",
+    "range_30": "Last 30 days",
+    "range_7": "Last 7 days",
+    "range_90": "Last 90 days",
+    "salesHint": "Revenue and orders for the selected period",
+    "salesTrend": "Sales trend",
+    "subtitle": "Monitor sales, orders, and inventory performance in real-time",
+    "title": "Analytics overview",
+    "topCategories": "Top categories",
+    "topCategoriesHint": "Based on orders for the selected period",
+    "topProductsHint": "Bestsellers by quantity",
+    "viewOrders": "View orders"
   },
-
   "categories": {
     "title": "Categories",
     "subtitle": "Organize your products into categories",
@@ -108,9 +130,17 @@
     "updated": "Category updated",
     "deleted": "Category deleted",
     "manage": "Manage Categories",
-    "nameAr": "Arabic Name"
+    "nameAr": "Arabic Name",
+    "delete": "Delete category",
+    "delete_confirm": "This action cannot be undone.",
+    "edit": "Edit category",
+    "emptyDescription": "Start by creating your first category.",
+    "emptyTitle": "No categories yet",
+    "form_subtitle": "Provide multilingual names and set display order",
+    "image_hint": "Drop an image or paste a URL",
+    "loadError": "Unable to load categories",
+    "reorder_error": "Unable to reorder categories"
   },
-
   "products": {
     "title": "Products",
     "subtitle": "Manage your product catalog",
@@ -118,7 +148,10 @@
     "slug": "Slug",
     "description": "Description",
     "imageUrl": "Main Image",
-    "images": "Additional Images",
+    "images": {
+      "label": "Additional Images",
+      "empty": "No gallery images added"
+    },
     "nameAr": "Arabic Name",
     "descriptionAr": "Arabic Description",
     "isHotOffer": "Hot Offer",
@@ -172,19 +205,74 @@
     "units": "Units",
     "delete": "Delete Product",
     "deleteConfirm": "Are you sure you want to delete this product? This action cannot be undone.",
-   
     "trend": {
       "good": "Good",
       "low": "Low"
     },
-    
     "media": {
       "hint": "Paste image URLs above (preview uses the main image)"
     },
-    
-    "add": "Add Product"
-  },
+    "add": "Add Product",
+    "bulkImport": {
+      "chooseFile": "Choose file",
+      "created": "Created",
+      "downloadTemplate": "Download template",
+      "dropzone": "Drag & drop your Excel file here",
+      "error": "Upload failed",
+      "failedRow": "Failed",
+      "instructions1": "Download the template, fill it, then upload the file.",
+      "message": "Message",
+      "noFile": "Select a file",
+      "noRows": "No row details provided",
+      "product": "Product",
+      "row": "Row",
+      "startUpload": "Start upload",
+      "status": "Status",
+      "success": "Bulk upload complete",
+      "successRow": "Success",
+      "templateDownloaded": "Template downloaded",
+      "templateError": "Unable to download template",
+      "updated": "Updated",
+      "uploading": "Uploading..."
+    },
+    "category_selected": "Category selected",
+    "createdAt": "Created",
+    "formSubtitle": "Fill in the product details below",
+    "gallery": "Gallery",
+    "hotOffer": "Hot offer",
+    "hotOffer_hint": "Highlight product in heroes and offer sections",
+    "importExcel": "Import products from Excel",
+    "invalid_price_positive": "Price must be greater than 0",
+    "mainImage": "Cover",
+    "maxPrice": "Max price",
+    "minPrice": "Min price",
+    "noResults": "No products found for the selected filters",
+    "noResultsHint": "Try adjusting your filters or search query.",
+    "not_found": "Product not found",
+    "permissions": {
+      "adminOnly": "Only admins can create products or change prices"
+    },
+    "price_locked": "Only admins can update prices",
+    "product": "Product",
+    "sort": {
+      "direction": "Sort direction",
+      "label": "Sort by",
+      "createdAt": "Created at",
+      "price": "Price",
+      "name": "Name",
+      "stock": "Stock",
+      "asc": "Ascending",
+      "desc": "Descending"
 
+    },
+    "stockFilters": {
+      "in": "In stock",
+      "low": "Low stock",
+      "out": "Out of stock",
+      "all": "All"
+    },
+    "tableTitle": "Products"
+  },
   "orders": {
     "title": "Orders",
     "subtitle": "Track and manage customer orders",
@@ -225,9 +313,12 @@
       "DELIVERED": "Delivered",
       "CANCELED": "Canceled"
     },
-    "viewAll": "View All Orders"
+    "viewAll": "View All Orders",
+    "emptyDescription": "Adjust filters or try again later.",
+    "emptyTitle": "No orders found",
+    "loadError": "Unable to load orders",
+    "updateFailed": "Unable to update order"
   },
-
   "coupons": {
     "title": "Coupons",
     "subtitle": "Create and manage discount coupons",
@@ -245,9 +336,13 @@
     "endsAt": "Ends At (ISO)",
     "minOrderCents": "Min Order (cents)",
     "maxDiscountCents": "Max Discount (cents)",
-    "searchPlaceholder": "Search code"
+    "searchPlaceholder": "Search code",
+    "edit": "Edit",
+    "emptyDescription": "Create a coupon to get started.",
+    "emptyTitle": "No coupons found",
+    "loadError": "Unable to load coupons",
+    "saveFailed": "Unable to save coupon"
   },
-
   "customers": {
     "title": "Customers",
     "name": "Name",
@@ -261,9 +356,15 @@
     "confirmPassword": "Confirm Password",
     "passwordTooShort": "Password must be at least 6 characters",
     "passwordMismatch": "Passwords do not match",
-    "passwordUpdated": "Password updated"
+    "passwordUpdated": "Password updated",
+    "emptyDescription": "Invite users or adjust filters.",
+    "emptyTitle": "No customers yet",
+    "loadError": "Unable to load customers",
+    "passwordReset": "Password reset",
+    "resetFailed": "Unable to reset password",
+    "roleUpdateFailed": "Unable to update role",
+    "roleUpdated": "Role updated"
   },
-
   "settings": {
     "title": "Settings",
     "general": "General",
@@ -284,18 +385,32 @@
       "freeDeliveryMinimum": "Free Delivery Minimum",
       "estimatedDeliveryTime": "Estimated Delivery Time",
       "maxDeliveryRadius": "Max Delivery Radius (km)",
-      "deliveryZones": "Delivery Zones "
+      "deliveryZones": "Delivery Zones ",
+      "noZones": "No delivery zones configured yet",
+      "zoneEnabled": "Active",
+      "zoneFee": "Fee",
+      "zoneName": "Zone name"
     },
     "paymentFields": {
       "cashOnDelivery": "Cash on Delivery ",
       "creditCards": "Credit Cards ",
       "digitalWallets": "Digital Wallets ",
-      "stripe": "Stripe "
+      "stripe": "Stripe ",
+      "acceptedCards": "Visa, Mastercard",
+      "maxAmount": "Max amount"
     },
     "notificationsFields": {
       "orderNotifications": "Order Notifications ",
       "marketingEmails": "Marketing Emails ",
-      "adminAlerts": "Admin Alerts "
+      "adminAlerts": "Admin Alerts ",
+      "frequency": "weekly",
+      "lowStock": "Low stock alerts",
+      "newOrders": "New order alerts",
+      "systemUpdates": "System updates",
+      "threshold": "5",
+      "push": "Push notifications",
+      "sms": "SMS",
+      "email": "Email"
     },
     "systemFields": {
       "maintenanceMode": "Maintenance Mode",
@@ -313,9 +428,20 @@
     "saveDelivery": "Save (Delivery)",
     "savePayment": "Save (Payment)",
     "saveNotifications": "Save (Notifications)",
-    "saveSystem": "Save (System)"
+    "saveSystem": "Save (System)",
+    "arabic": "Arabic",
+    "deliverySaved": "Delivery settings saved",
+    "emptyDescription": "Configure the store to get started.",
+    "emptyTitle": "No settings available",
+    "english": "English",
+    "generalSaved": "General settings saved",
+    "loadError": "Failed to load settings",
+    "notificationsSaved": "Notifications saved",
+    "paymentSaved": "Payment settings saved",
+    "saveError": "Unable to save settings",
+    "subtitle": "Manage every part of the admin experience",
+    "systemSaved": "System settings saved"
   },
-
   "menu": {
     "dashboard": "Dashboard",
     "categories": "Categories",
@@ -326,7 +452,6 @@
     "coupons": "Coupons",
     "settings": "Settings"
   },
-
   "common": {
     "app_name": "Fasket",
     "admin_panel": "Admin Panel",
@@ -345,9 +470,9 @@
     "viewDetails": "View Details",
     "viewAll": "View All",
     "all": "All",
-    "actions": "Actions"
+    "actions": "Actions",
+    "search": "Search"
   },
-
   "auth": {
     "sign_in_title": "Sign in to Fasket Dashboard",
     "sign_in_subtitle": "Use your phone number and password to log in.",
@@ -364,6 +489,15 @@
     "forbidden_desc": "Your account does not have admin privileges. Please sign in with an ADMIN account.",
     "back_to_login": "Back to Login",
     "logout": "Logout",
-    "not_admin": "This account is not an admin. Please use an ADMIN account."
-  }
+    "not_admin": "This account is not an admin. Please use an ADMIN account.",
+    "identifier_label": "Phone or Email",
+    "identifier_placeholder": "+201234567890 or user@fasket.com",
+    "invalid_identifier": "Enter a valid phone number or email",
+    "sessionExpired": "Session expired, please sign in again"
+  },
+  "confirm_password": "Confirm Password",
+  "newPassword": "New Password",
+  "passwordMismatch": "Passwords do not match",
+  "passwordTooShort": "Password must be at least 6 characters",
+  "resetPassword": "Reset Password"
 }

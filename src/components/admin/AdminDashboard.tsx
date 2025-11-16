@@ -71,12 +71,13 @@ export type ScreenProps = {
 
 export function AdminDashboard() {
   const { t, i18n } = useTranslation();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   useDirection();
+  const defaultScreen: AdminScreen = isAdmin ? "dashboard" : "products";
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [adminState, setAdminState] = useState<AdminState>({
-    currentScreen: "dashboard",
-  });
+  const [adminState, setAdminState] = useState<AdminState>(() => ({
+    currentScreen: defaultScreen,
+  }));
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const role = (user?.role || "").toUpperCase();
@@ -84,7 +85,7 @@ export function AdminDashboard() {
     () =>
       role === "ADMIN"
         ? ["dashboard", "categories", "products", "hot-offers", "orders", "customers", "coupons", "settings"]
-        : ["categories", "products", "hot-offers", "orders", "customers"],
+        : ["categories", "products", "hot-offers", "orders"],
     [role]
   );
 
@@ -97,22 +98,32 @@ export function AdminDashboard() {
 
   // Live notifications from recent orders + low stock
   useEffect(() => {
+    if (!isAdmin) {
+      setSummary(null);
+      return;
+    }
+    let cancelled = false;
     (async () => {
       try {
         const s = await fetchDashboard();
-        setSummary(s);
+        if (!cancelled) {
+          setSummary(s);
+        }
       } catch (e) {
         // ignore; header/side can render without
       }
     })();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
 
-  // If staff lands on dashboard, redirect to products
+  // Ensure users cannot stay on screens outside their role permissions
   useEffect(() => {
-    if (role !== "ADMIN" && adminState.currentScreen === "dashboard") {
-      updateAdminState({ currentScreen: "products" });
+    if (!accessibleScreens.includes(adminState.currentScreen)) {
+      setAdminState((prev) => ({ ...prev, currentScreen: defaultScreen }));
     }
-  }, [role, adminState.currentScreen, updateAdminState]);
+  }, [accessibleScreens, adminState.currentScreen, defaultScreen]);
   const notifications = useMemo(() => {
     const items: Array<{ id: string|number; title: string; message: string; time?: string; type: string; payload?: Record<string, any> }>=[];
     if (summary?.recent?.length) {
@@ -159,7 +170,6 @@ export function AdminDashboard() {
       { id: "coupons" as const, icon: Ticket, badge: null },
       { id: "settings" as const, icon: Settings, badge: null },
     ] as Array<{ id: AdminScreen; icon: any; badge: number | null }>;
-    // Role-based filtering: staff can see customers for password reset
     return all.filter((item) => accessibleScreens.includes(item.id));
   }, [summary, accessibleScreens]);
 

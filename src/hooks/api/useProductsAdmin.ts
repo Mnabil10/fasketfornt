@@ -10,7 +10,7 @@ export type UseProductsAdminFilters = {
   inStock?: boolean;
   isHotOffer?: boolean;
   orderBy?: "createdAt" | "priceCents" | "name" | "stock";
-  sortDirection?: "asc" | "desc";
+  sort?: "asc" | "desc";
   page?: number;
   pageSize?: number;
 };

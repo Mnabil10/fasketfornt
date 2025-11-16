@@ -62,9 +62,9 @@ export function OrdersManagement(props?: any) {
   const apiFilters = useMemo(
     () => ({
       status: filters.status || undefined,
-      dateFrom: filters.from || undefined,
-      dateTo: filters.to || undefined,
-      search: filters.customer.trim() || undefined,
+      from: filters.from || undefined,
+      to: filters.to || undefined,
+      customer: filters.customer.trim() || undefined,
       page: filters.page,
       pageSize,
     }),

@@ -1,4 +1,5 @@
 import { api } from "../lib/api";
+import { buildQueryParams } from "../lib/query";
 
 export type OrderSummary = {
   id: string;
@@ -11,25 +12,16 @@ export type Paged<T> = { items: T[]; total: number; page: number; pageSize: numb
 
 export async function listOrders(params?: {
   status?: OrderSummary["status"];
-  dateFrom?: string;
-  dateTo?: string;
+  from?: string;
+  to?: string;
+  customer?: string;
   minTotalCents?: number;
   maxTotalCents?: number;
-  search?: string;
   page?: number;
   pageSize?: number;
 }) {
-  const normalized = {
-    status: params?.status,
-    from: params?.dateFrom ?? (params as any)?.from,
-    to: params?.dateTo ?? (params as any)?.to,
-    minTotalCents: params?.minTotalCents,
-    maxTotalCents: params?.maxTotalCents,
-    customer: params?.search ?? (params as any)?.customer,
-    page: params?.page,
-    pageSize: params?.pageSize,
-  };
-  const { data } = await api.get<Paged<OrderSummary>>("/api/v1/admin/orders", { params: normalized });
+  const query = buildQueryParams(params);
+  const { data } = await api.get<Paged<OrderSummary>>("/api/v1/admin/orders", { params: query });
   return data;
 }
 export async function getOrder(id: string) {

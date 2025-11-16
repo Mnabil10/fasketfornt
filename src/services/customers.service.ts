@@ -1,4 +1,5 @@
 import { api } from "../lib/api";
+import { buildQueryParams } from "../lib/query";
 export type Customer = {
   id: string;
   name: string;
@@ -13,7 +14,8 @@ export type Customer = {
 export type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 
 export async function listCustomers(params?: { q?: string; page?: number; pageSize?: number }) {
-  const { data } = await api.get<Paged<Customer>>("/api/v1/admin/customers", { params });
+  const query = buildQueryParams(params);
+  const { data } = await api.get<Paged<Customer>>("/api/v1/admin/customers", { params: query });
   return data;
 }
 export async function getCustomer(id: string) {

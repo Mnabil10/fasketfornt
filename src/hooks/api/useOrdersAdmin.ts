@@ -3,11 +3,11 @@ import { listOrders, type OrderSummary, type Paged } from "../../services/orders
 
 export type UseOrdersAdminFilters = {
   status?: OrderSummary["status"];
-  dateFrom?: string;
-  dateTo?: string;
+  from?: string;
+  to?: string;
   minTotalCents?: number;
   maxTotalCents?: number;
-  search?: string;
+  customer?: string;
   page?: number;
   pageSize?: number;
 };

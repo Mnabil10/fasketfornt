@@ -1,5 +1,6 @@
 import { api } from "../lib/api";
 import type { AxiosError } from "axios";
+import { buildQueryParams } from "../lib/query";
 
 export type Category = {
   id: string;
@@ -42,7 +43,8 @@ export async function listCategories(params?: {
   pageSize?: number;
   sort?: string;
 }) {
-  const { data } = await api.get<Paged<Category>>("/api/v1/admin/categories", { params });
+  const query = buildQueryParams(params);
+  const { data } = await api.get<Paged<Category>>("/api/v1/admin/categories", { params: query });
   return data;
 }
 export async function getCategory(id: string) {

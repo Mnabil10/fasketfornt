@@ -311,7 +311,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
   const [drawerState, setDrawerState] = useState<DrawerState>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
 
-  const categoriesQuery = useCategoriesAdmin({ pageSize: 200 }, { enabled: true });
+  const categoriesQuery = useCategoriesAdmin({ pageSize: 100 }, { enabled: true });
 
   const apiFilters = useMemo(() => {
     const q = debouncedSearch.trim();
@@ -331,7 +331,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
           : undefined,
       isHotOffer: filters.onlyHot || undefined,
       orderBy: filters.sortField,
-      sortDirection: filters.sortDirection,
+      sort: filters.sortDirection,
       page: filters.page,
       pageSize: filters.pageSize,
     };
@@ -1207,7 +1207,7 @@ function ProductImagesInput({ value, mainImage, onChange, onMainChange }: Produc
 
   return (
     <div className="space-y-3">
-      <Label>{t("products.images")}</Label>
+      <Label>{t("products.images.label", "Additional images")}</Label>
       <div
         className="border border-dashed rounded-lg p-4 text-center text-sm text-muted-foreground"
         onDragOver={(event) => event.preventDefault()}
@@ -1469,11 +1469,11 @@ function BulkUploadDrawer({ open, onOpenChange, onCompleted }: BulkUploadDrawerP
 }
 
 async function downloadBulkTemplate() {
-  const blob = await downloadProductsBulkTemplate();
+  const { blob, filename } = await downloadProductsBulkTemplate();
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "products-template.xlsx";
+  link.download = filename || "products-template.xlsx";
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
