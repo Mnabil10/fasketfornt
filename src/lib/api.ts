@@ -6,8 +6,8 @@ import { refreshAccessToken } from "../services/auth.service";
 import { emitAuthEvent } from "./auth-events";
 
 export const api = axios.create({
-  // baseURL: import.meta.env.VITE_API_URL || "https://api.fasket.cloud",
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:4000",
+  baseURL: import.meta.env.VITE_API_URL || "https://api.fasket.cloud",
+  // baseURL: import.meta.env.VITE_API_URL || "http://localhost:4000",
   timeout: 15000,
 });
 
