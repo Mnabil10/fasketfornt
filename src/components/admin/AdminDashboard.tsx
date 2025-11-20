@@ -1,5 +1,6 @@
 // src/components/admin/AdminDashboard.tsx
 import React, { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { SidebarProvider } from "../ui/sidebar";
 import { Sheet, SheetContent } from "../ui/sheet";
 import { Input } from "../ui/input";
@@ -29,6 +30,7 @@ import {
   Globe,
   Flame,
   Ticket,
+  Truck,
 } from "lucide-react";
 const DashboardOverview = React.lazy(() =>
   import("./screens/DashboardOverview").then((m) => ({ default: m.DashboardOverview }))
@@ -40,6 +42,8 @@ import { CustomersManagement } from "./screens/CustomersManagement";
 import { SettingsManagement } from "./screens/SettingsManagement";
 import { CouponsManagement } from "./screens/CouponsManagement";
 import { HotOffersList } from "./screens/HotOffers";
+import { DeliveryDriversManagement } from "./screens/DeliveryDriversManagement";
+import { DeliveryZonesManagement } from "./screens/DeliveryZonesManagement";
 import { useTranslation } from "react-i18next";
 import BrandLogo from "../common/BrandLogo";
 import { fetchDashboard, type DashboardSummary } from "../../services/dashboard.service";
@@ -54,7 +58,8 @@ export type AdminScreen =
   | "orders"
   | "customers"
   | "coupons"
-  | "settings";
+  | "settings"
+  | "delivery-drivers";
 
 export interface AdminState {
   currentScreen: AdminScreen;
@@ -73,7 +78,16 @@ export function AdminDashboard() {
   const { t, i18n } = useTranslation();
   const { user, isAdmin } = useAuth();
   useDirection();
+  const location = useLocation();
+  const navigate = useNavigate();
   const defaultScreen: AdminScreen = isAdmin ? "dashboard" : "products";
+  const pathSegments = useMemo(() => location.pathname.replace(/^\/+/, "").split("/").filter(Boolean), [location.pathname]);
+  const derivedScreen: AdminScreen =
+    (pathSegments[0] as AdminScreen | undefined) && (["dashboard", "categories", "products", "hot-offers", "orders", "customers", "coupons", "settings", "delivery-drivers"] as const).includes(
+      pathSegments[0] as AdminScreen
+    )
+      ? (pathSegments[0] as AdminScreen)
+      : defaultScreen;
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [adminState, setAdminState] = useState<AdminState>(() => ({
     currentScreen: defaultScreen,
@@ -84,14 +98,33 @@ export function AdminDashboard() {
   const accessibleScreens = useMemo<AdminScreen[]>(
     () =>
       role === "ADMIN"
-        ? ["dashboard", "categories", "products", "hot-offers", "orders", "customers", "coupons", "settings"]
+        ? ["dashboard", "categories", "products", "hot-offers", "orders", "customers", "coupons", "settings", "delivery-drivers"]
         : ["categories", "products", "hot-offers", "orders"],
     [role]
   );
 
+  const screenToPath = (screen: AdminScreen) => (screen === "dashboard" ? "/" : `/${screen}`);
+
+  useEffect(() => {
+    if (!accessibleScreens.includes(derivedScreen)) return;
+    setAdminState((prev) => ({ ...prev, currentScreen: derivedScreen }));
+  }, [derivedScreen, accessibleScreens]);
+
+  useEffect(() => {
+    if (derivedScreen === "orders" && pathSegments[1]) {
+      setAdminState((prev) => ({ ...prev, selectedOrder: pathSegments[1] }));
+    }
+  }, [derivedScreen, pathSegments]);
+
   const updateAdminState = (updates: Partial<AdminState>) => {
     if (updates.currentScreen && !accessibleScreens.includes(updates.currentScreen)) {
       return;
+    }
+    if (updates.currentScreen) {
+      const target = screenToPath(updates.currentScreen);
+      if (target !== location.pathname) {
+        navigate(target);
+      }
     }
     setAdminState((prev) => ({ ...prev, ...updates }));
   };
@@ -166,6 +199,7 @@ export function AdminDashboard() {
       { id: "products" as const, icon: Package, badge: lowStockCount && lowStockCount > 0 ? lowStockCount : null },
       { id: "hot-offers" as const, icon: Flame, badge: null },
       { id: "orders" as const, icon: ShoppingCart, badge: ordersCount },
+      { id: "delivery-drivers" as const, icon: Truck, badge: null },
       { id: "customers" as const, icon: Users, badge: customersCount },
       { id: "coupons" as const, icon: Ticket, badge: null },
       { id: "settings" as const, icon: Settings, badge: null },
@@ -173,7 +207,19 @@ export function AdminDashboard() {
     return all.filter((item) => accessibleScreens.includes(item.id));
   }, [summary, accessibleScreens]);
 
-  const labelFor = (id: AdminScreen) => t(`menu.${id}`);
+  const defaultLabels: Record<AdminScreen, string> = {
+    dashboard: "Dashboard",
+    categories: "Categories",
+    products: "Products",
+    "hot-offers": "Hot Offers",
+    orders: "Orders",
+    customers: "Customers",
+    coupons: "Coupons",
+    settings: "Settings",
+    "delivery-drivers": "Delivery Drivers",
+  };
+
+  const labelFor = (id: AdminScreen) => t(`menu.${id}`, { defaultValue: defaultLabels[id] });
 
   const SidebarMenuContent = () => (
     <>
@@ -200,7 +246,7 @@ export function AdminDashboard() {
       <div className="px-3 py-4 bg-sidebar text-sidebar-foreground">
         <div className="space-y-1">
           {menuItems.map((item) => {
-            const active = adminState.currentScreen === item.id;
+            const active = derivedScreen === item.id;
             return (
               <button
                 key={item.id}
@@ -236,22 +282,32 @@ export function AdminDashboard() {
     </>
   );
 
-  const LanguageSwitch = () => (
+    const LanguageSwitch = () => (
     <Button
       variant="outline"
       size="sm"
       className="flex items-center gap-2"
       onClick={() => i18n.changeLanguage(i18n.language === "en" ? "ar" : "en")}
-      title={i18n.language === "en" ? "Switch to Arabic" : "التبديل إلى الإنجليزية"}
+      title={i18n.language === "en" ? "Switch to Arabic" : "Switch to English"}
     >
       <Globe className="w-4 h-4" />
-      <span>{i18n.language === "en" ? "عربي" : "EN"}</span>
+      <span>{i18n.language === "en" ? "AR" : "EN"}</span>
     </Button>
   );
 
   const renderScreen = () => {
     const p = { adminState, updateAdminState } as any;
-    switch (adminState.currentScreen) {
+    const secondary = pathSegments[1];
+
+    if (derivedScreen === "delivery-drivers") {
+      return <DeliveryDriversManagement />;
+    }
+
+    if (derivedScreen === "settings" && secondary === "delivery-zones") {
+      return <DeliveryZonesManagement />;
+    }
+
+    switch (derivedScreen) {
       case "dashboard":
         return (
           <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading…</div>}>
@@ -265,13 +321,13 @@ export function AdminDashboard() {
       case "hot-offers":
         return <HotOffersList {...p} />;
       case "orders":
-        return <OrdersManagement {...p} />;
+        return <OrdersManagement {...p} initialOrderId={secondary} />;
       case "customers":
         return <CustomersManagement {...p} />;
       case "coupons":
         return <CouponsManagement {...p} />;
       case "settings":
-        return <SettingsManagement {...p} />;
+        return <SettingsManagement {...p} initialSection={secondary} />;
       default:
         return <DashboardOverview {...p} />;
     }
@@ -309,7 +365,7 @@ export function AdminDashboard() {
                 </Button>
 
                 <h2 className="font-poppins text-xl lg:text-2xl truncate font-semibold">
-                  {labelFor(adminState.currentScreen)}
+                  {labelFor(derivedScreen)}
                 </h2>
               </div>
 
@@ -358,7 +414,11 @@ export function AdminDashboard() {
                           className="p-3 border-b last:border-b-0 border-border cursor-pointer"
                           onClick={() => {
                             if (toScreen === "orders" && (n as any).payload?.orderId) {
-                              updateAdminState({ currentScreen: "orders", selectedOrder: (n as any).payload.orderId });
+                              const orderId = (n as any).payload?.orderId;
+                              if (orderId) {
+                                navigate(`/orders/${orderId}`);
+                                updateAdminState({ currentScreen: "orders", selectedOrder: orderId });
+                              }
                             } else if (toScreen === "products" && (n as any).payload?.productId) {
                               updateAdminState({ currentScreen: "products", selectedProduct: (n as any).payload.productId });
                             } else {
@@ -413,7 +473,7 @@ export function AdminDashboard() {
                       onClick={() => {
                         localStorage.removeItem("fasket_admin_token");
                         localStorage.removeItem("fasket_admin_user");
-                        location.reload();
+                        window.location.reload();
                       }}
                     >
                       <LogOut className="w-4 h-4 mr-2" />

@@ -1,9 +1,12 @@
 import { QueryCache, QueryClient, MutationCache } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { getApiErrorMessage } from "./errors";
+import i18n from "../i18n";
+import { getAdminErrorMessage } from "./errors";
+
+const translate = i18n.t.bind(i18n);
 
 function notify(error: unknown) {
-  const message = getApiErrorMessage(error, "Unable to complete request");
+  const message = getAdminErrorMessage(error, translate, translate("errors.DEFAULT"));
   toast.error(message);
 }
 

@@ -257,7 +257,8 @@ function buildFileFromPayload(payload: unknown): DownloadedFile {
   }
 
   const contentType = streamPayload.options?.type || "application/octet-stream";
-  const blob = new Blob([bytes], { type: contentType });
+  const buffer = new Uint8Array(bytes).buffer;
+  const blob = new Blob([buffer], { type: contentType });
   return {
     blob,
     filename: extractFilename(streamPayload.options?.disposition),

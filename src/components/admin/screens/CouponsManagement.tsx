@@ -13,7 +13,7 @@ import { Label } from "../../ui/label";
 import { Plus, Search, Edit } from "lucide-react";
 import { toast } from "sonner";
 import { useCouponsAdmin, COUPONS_QUERY_KEY } from "../../../hooks/api/useCouponsAdmin";
-import { getApiErrorMessage } from "../../../lib/errors";
+import { getAdminErrorMessage } from "../../../lib/errors";
 import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
 import { EmptyState } from "../../admin/common/EmptyState";
 import { ErrorState } from "../../admin/common/ErrorState";
@@ -68,7 +68,7 @@ export function CouponsManagement() {
       setOpen(false);
       await queryClient.invalidateQueries({ queryKey: COUPONS_QUERY_KEY });
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, t('coupons.saveFailed', 'Unable to save coupon'))),
+    onError: (error) => toast.error(getAdminErrorMessage(error, t, t("coupons.saveFailed", "Unable to save coupon"))),
   });
 
   function openCreate() {

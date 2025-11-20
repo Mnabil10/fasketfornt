@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { getSettings, type SettingsResponse } from "../../services/settings.service";
+import { getSettings } from "../../services/settings.service";
+import type { SettingsResponse } from "../../types/settings";
 
 export const SETTINGS_QUERY_KEY = ["admin-settings"] as const;
 

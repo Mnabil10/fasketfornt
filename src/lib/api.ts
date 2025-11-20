@@ -1,13 +1,20 @@
 import axios from "axios";
 import type { AxiosError, AxiosRequestConfig } from "axios";
+
+declare const __API_BASE__: string | undefined;
 import { toast } from "sonner";
 import i18n from "../i18n";
 import { refreshAccessToken } from "../services/auth.service";
 import { emitAuthEvent } from "./auth-events";
 
+const baseURL =
+  import.meta.env.VITE_API_BASE ||
+  import.meta.env.VITE_API_URL ||
+  (typeof __API_BASE__ !== "undefined" ? __API_BASE__ : undefined) ||
+  "";
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "https://api.fasket.cloud",
-  // baseURL: import.meta.env.VITE_API_URL || "http://localhost:4000",
+  baseURL,
   timeout: 15000,
 });
 
@@ -24,6 +31,18 @@ let queue: ((t: string) => void)[] = [];
 const onRefreshed = (t: string) => { queue.forEach((cb) => cb(t)); queue = []; };
 
 type RetryableConfig = AxiosRequestConfig & { _retry?: boolean };
+
+function normalizeErrorResponse(data: any) {
+  if (!data || typeof data !== "object") return null;
+  const nested = typeof data.error === "object" ? data.error : undefined;
+  return {
+    success: false,
+    code: data.code ?? nested?.code,
+    message: data.message ?? nested?.message ?? (typeof data.error === "string" ? data.error : undefined),
+    correlationId: data.correlationId,
+    errors: data.errors,
+  };
+}
 
 function hardSignOut() {
   localStorage.removeItem("fasket_admin_token");
@@ -43,11 +62,18 @@ api.interceptors.response.use(
       if (payload.success !== false) {
         return { ...response, data: payload.data };
       }
-      const error = new Error(payload?.error?.message || "Request failed");
+      const normalizedError = {
+        success: false,
+        code: payload.code ?? payload?.error?.code,
+        message: payload.message ?? payload?.error?.message ?? "Request failed",
+        correlationId: payload.correlationId,
+        errors: payload.errors,
+      };
+      const error = new Error(normalizedError.message || "Request failed");
       (error as any).isAxiosError = true;
       (error as any).response = {
         ...response,
-        data: payload.error ?? payload,
+        data: normalizedError,
       };
       (error as any).config = response.config;
       return Promise.reject(error);
@@ -57,6 +83,20 @@ api.interceptors.response.use(
   async (err: AxiosError) => {
     const status = err.response?.status;
     const original = (err.config || {}) as RetryableConfig;
+
+    if (err.response?.data) {
+      const normalized = normalizeErrorResponse(err.response.data);
+      if (normalized) {
+        const normalizedError = new Error(normalized.message || "Request failed");
+        (normalizedError as any).isAxiosError = true;
+        (normalizedError as any).config = err.config;
+        (normalizedError as any).response = {
+          ...(err.response || {}),
+          data: normalized,
+        };
+        err = normalizedError as AxiosError;
+      }
+    }
 
     // Handle unauthorized: attempt refresh once
     if (status === 401 && !original._retry) {

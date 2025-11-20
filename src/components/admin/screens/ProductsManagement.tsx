@@ -4,6 +4,7 @@ import { useForm, Controller, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   createProduct,
   updateProduct,
@@ -72,7 +73,7 @@ import { useCategoriesAdmin } from "../../../hooks/api/useCategoriesAdmin";
 import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
 import { EmptyState } from "../../admin/common/EmptyState";
 import { ErrorState } from "../../admin/common/ErrorState";
-import { getApiErrorMessage } from "../../../lib/errors";
+import { getAdminErrorMessage } from "../../../lib/errors";
 import type { ScreenProps } from "../../admin/AdminDashboard";
 
 const MAX_FILE_MB = 10;
@@ -132,6 +133,8 @@ type BulkRowStatus = { row: number | string; status: "success" | "failed"; messa
 type BulkUploadResult = {
   created: number;
   updated: number;
+  skipped?: number;
+  dryRun?: boolean;
   rows?: BulkRowStatus[];
   errors?: { row: number | string; message: string; name?: string }[];
 };
@@ -351,6 +354,14 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
     return data.filter((item) => item.stock > 0 && item.stock <= 10);
   }, [productsQuery.data?.items, filters.stock]);
 
+  const productListParentRef = useRef<HTMLDivElement | null>(null);
+  const productVirtualizer = useVirtualizer({
+    count: tableItems.length,
+    getScrollElement: () => productListParentRef.current,
+    estimateSize: () => 96,
+    overscan: 6,
+  });
+
   const total = filters.stock === "low" ? tableItems.length : productsQuery.data?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / (filters.pageSize || DEFAULT_PAGE_SIZE)));
 
@@ -415,7 +426,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
       setDrawerState(null);
     },
     onError: (error) => {
-      toast.error(getApiErrorMessage(error, t("app.notifications.error", "Unable to save product")));
+      toast.error(getAdminErrorMessage(error, t, t("app.notifications.error", "Unable to save product")));
     },
   });
 
@@ -425,7 +436,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
       toast.success(t("products.deleted", "Product deleted"));
       queryClient.invalidateQueries({ queryKey: PRODUCTS_QUERY_KEY });
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, t("app.notifications.error"))),
+    onError: (error) => toast.error(getAdminErrorMessage(error, t, t("app.notifications.error"))),
   });
 
   useEffect(() => {
@@ -435,7 +446,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
         const product = await getProduct(String(adminState.selectedProduct));
         setDrawerState({ mode: "edit", product });
       } catch (error) {
-        toast.error(getApiErrorMessage(error, t("products.not_found", "Product not found")));
+        toast.error(getAdminErrorMessage(error, t, t("products.not_found", "Product not found")));
       } finally {
         updateAdminState?.({ selectedProduct: null });
       }
@@ -677,7 +688,8 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
             </div>
           ) : tableItems.length ? (
             <div className="overflow-x-auto">
-              <Table>
+              <div ref={productListParentRef} className="max-h-[70vh] overflow-auto">
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="cursor-pointer" onClick={() => handleSort("name")}>
@@ -710,9 +722,20 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
                     <TableHead className="text-right">{t("app.actions.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {tableItems.map((product) => (
-                    <TableRow key={product.id}>
+                <TableBody style={{ position: "relative", height: productVirtualizer.getTotalSize() }}>
+                  {productVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const product = tableItems[virtualRow.index];
+                    return (
+                      <TableRow
+                        key={product.id}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
+                      >
                       <TableCell>
                         <div className="flex gap-3">
                           <div className="w-14 h-14 rounded-md overflow-hidden bg-muted">
@@ -787,10 +810,12 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
           ) : (
             <div className="p-6">
               <EmptyState
@@ -1310,7 +1335,7 @@ function BulkUploadDrawer({ open, onOpenChange, onCompleted }: BulkUploadDrawerP
       toast.success(t("products.bulkImport.success", "Bulk upload complete"));
       onCompleted();
     } catch (err) {
-      const message = getApiErrorMessage(err, t("products.bulkImport.error", "Upload failed"));
+      const message = getAdminErrorMessage(err, t, t("products.bulkImport.error", "Upload failed"));
       setError(message);
       toast.error(message);
     } finally {
@@ -1346,7 +1371,9 @@ function BulkUploadDrawer({ open, onOpenChange, onCompleted }: BulkUploadDrawerP
                   await downloadBulkTemplate();
                   toast.success(t("products.bulkImport.templateDownloaded", "Template downloaded"));
                 } catch (err) {
-                  toast.error(getApiErrorMessage(err, t("products.bulkImport.templateError", "Unable to download template")));
+                  toast.error(
+                    getAdminErrorMessage(err, t, t("products.bulkImport.templateError", "Unable to download template"))
+                  );
                 }
               }}
             >
@@ -1485,7 +1512,7 @@ async function uploadBulkFile(file: File): Promise<BulkUploadResult> {
   const rows =
     payload.rows?.map((row, index) => ({
       row: row.row ?? row.rowNumber ?? index + 1,
-      status: (row.status || "").toLowerCase() === "failed" ? "failed" : "success",
+      status: ((row.status || "").toLowerCase() === "failed" ? "failed" : "success") as BulkRowStatus["status"],
       message: row.errorMessage || row.message,
       name: row.name,
     })) ?? [];

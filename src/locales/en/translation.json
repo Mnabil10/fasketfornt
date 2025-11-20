@@ -52,6 +52,22 @@
     "inactive": "Inactive",
     "saving": "Saving..."
   },
+  "errors": {
+    "DEFAULT": "Something went wrong. Please try again.",
+    "ORDER_NOT_FOUND": "Order not found.",
+    "ADDRESS_INVALID_ZONE": "Address is outside of supported delivery zones.",
+    "DRIVER_NOT_FOUND": "Driver not found.",
+    "DRIVER_INACTIVE": "Driver is inactive.",
+    "DRIVER_ALREADY_ASSIGNED": "Driver is already assigned.",
+    "LOYALTY_DISABLED": "Loyalty program is disabled.",
+    "LOYALTY_NOT_ENOUGH_POINTS": "Customer does not have enough points.",
+    "LOYALTY_RULE_VIOLATION": "This action violates the loyalty rules.",
+    "SETTING_NOT_CONFIGURED": "This setting is not configured yet.",
+    "VALIDATION_FAILED": "Some fields are invalid. Please review your input.",
+    "INTERNAL_ERROR": "Internal error. Please try again or contact support.",
+    "RATE_LIMITED": "Too many requests. Please slow down and try again.",
+    "UNAUTHORIZED": "You are not authorized to perform this action."
+  },
   "nav": {
     "dashboard": "Dashboard",
     "categories": "Categories",

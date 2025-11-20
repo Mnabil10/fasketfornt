@@ -1,84 +1,56 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { useForm, Controller, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, type Resolver } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
-import { Button } from "../../ui/button";
-import { Input } from "../../ui/input";
-import { Textarea } from "../../ui/textarea";
-import { Switch } from "../../ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../ui/tabs";
+import { Input } from "../../ui/input";
+import { Button } from "../../ui/button";
 import { Label } from "../../ui/label";
+import { Switch } from "../../ui/switch";
 import { toast } from "sonner";
-import { useSettingsAdmin, SETTINGS_QUERY_KEY } from "../../../hooks/api/useSettingsAdmin";
-import {
-  updateGeneral,
-  updateDelivery,
-  updatePayment,
-  updateNotifications,
-  updateSystem,
-  type SettingsResponse,
-} from "../../../services/settings.service";
-import { getApiErrorMessage } from "../../../lib/errors";
-import { EmptyState } from "../../admin/common/EmptyState";
-import { ErrorState } from "../../admin/common/ErrorState";
-import { Skeleton } from "../../ui/skeleton";
-
-const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
-type DayKey = (typeof days)[number];
-
-const optionalEmail = z.union([z.string().email(), z.literal(""), z.undefined()]);
-const optionalPhone = z.union([z.string().min(5), z.literal(""), z.undefined()]);
-
-const daySchema = z.object({
-  open: z.string().min(1),
-  close: z.string().min(1),
-  enabled: z.boolean(),
-});
+import { useSettingsAdmin } from "../../../hooks/api/useSettingsAdmin";
+import { useUpdateSettingsSection } from "../../../hooks/api/useUpdateSettingsSection";
+import { getAdminErrorMessage } from "../../../lib/errors";
+import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
+import { ErrorState } from "../common/ErrorState";
+import { EmptyState } from "../common/EmptyState";
+import type { DeliverySettings, GeneralSettings, PaymentSettings, NotificationsSettings, SystemSettings } from "../../../types/settings";
+import { useDeliveryZones } from "../../../hooks/api/useDeliveryZones";
+import { Badge } from "../../ui/badge";
+import { useNavigate } from "react-router-dom";
 
 const generalSchema = z.object({
   storeName: z.string().min(2),
   storeDescription: z.string().optional(),
-  contactEmail: optionalEmail,
-  contactPhone: optionalPhone,
+  contactEmail: z.string().email().optional(),
+  contactPhone: z.string().optional(),
   storeAddress: z.string().optional(),
-  businessHours: z.record(daySchema).optional(),
+  timezone: z.string().optional(),
+  language: z.string().optional(),
+  currency: z.string().optional(),
 });
 
-const deliveryZoneSchema = z.object({
-  name: z.string().min(1),
-  fee: z.coerce.number().min(0),
-  enabled: z.boolean(),
+const deliveryOverrideSchema = z.object({
+  zoneId: z.string(),
+  deliveryFeeCents: z.coerce.number().min(0),
+  freeDeliveryThresholdCents: z.coerce.number().min(0).nullable().optional(),
 });
 
 const deliverySchema = z.object({
-  deliveryFee: z.coerce.number().min(0),
-  freeDeliveryMinimum: z.coerce.number().min(0),
-  estimatedDeliveryTime: z.string().min(2),
-  maxDeliveryRadius: z.coerce.number().min(0),
-  deliveryZones: z.array(deliveryZoneSchema).default([]),
+  deliveryEnabled: z.boolean(),
+  defaultDeliveryFeeCents: z.coerce.number().min(0),
+  freeDeliveryThresholdCents: z.coerce.number().min(0),
+  perZoneOverrides: z.array(deliveryOverrideSchema).default([]),
 });
-
-const numberOrUndefined = (schema: z.ZodTypeAny) =>
-  z.preprocess((value) => {
-    if (value === "" || value === null || typeof value === "undefined") return undefined;
-    return value;
-  }, schema);
 
 const paymentSchema = z.object({
   cashOnDeliveryEnabled: z.boolean(),
-  cashOnDeliveryMaxAmount: numberOrUndefined(z.coerce.number().min(0).optional()),
-  creditCardsEnabled: z.boolean(),
-  acceptedCards: z.string().optional(),
-  paypalEnabled: z.boolean(),
-  applePayEnabled: z.boolean(),
-  googlePayEnabled: z.boolean(),
+  cashOnDeliveryMaxAmount: z.coerce.number().min(0).nullable().optional(),
   stripeEnabled: z.boolean(),
   stripePublicKey: z.string().optional(),
   stripeSecretKey: z.string().optional(),
-  stripeWebhookSecret: z.string().optional(),
 });
 
 const notificationsSchema = z.object({
@@ -86,11 +58,6 @@ const notificationsSchema = z.object({
   notifySms: z.boolean(),
   notifyPush: z.boolean(),
   marketingEnabled: z.boolean(),
-  marketingFrequency: z.string().optional(),
-  lowStockEnabled: z.boolean(),
-  lowStockThreshold: numberOrUndefined(z.coerce.number().min(0).optional()),
-  newOrdersEnabled: z.boolean(),
-  systemUpdatesEnabled: z.boolean(),
 });
 
 const systemSchema = z.object({
@@ -98,842 +65,542 @@ const systemSchema = z.object({
   allowRegistrations: z.boolean(),
   requireEmailVerification: z.boolean(),
   sessionTimeout: z.coerce.number().min(5),
-  maxLoginAttempts: z.coerce.number().min(1),
-  dataRetentionDays: z.coerce.number().min(1),
-  backupFrequency: z.string().min(2),
-  timezone: z.string().min(2),
-  language: z.string().min(2),
-  currency: z.string().min(2),
 });
 
 type GeneralFormValues = z.infer<typeof generalSchema>;
 type DeliveryFormValues = z.infer<typeof deliverySchema>;
-type DeliveryZoneFormValue = z.infer<typeof deliveryZoneSchema>;
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 type NotificationsFormValues = z.infer<typeof notificationsSchema>;
 type SystemFormValues = z.infer<typeof systemSchema>;
 
-const defaultBusinessHours: Record<DayKey, z.infer<typeof daySchema>> = days.reduce(
-  (acc, day) => {
-    acc[day] = { open: "09:00", close: "18:00", enabled: true };
-    return acc;
-  },
-  {} as Record<DayKey, z.infer<typeof daySchema>>
-);
-
-const defaultGeneralValues: GeneralFormValues = {
-  storeName: "",
-  storeDescription: "",
-  contactEmail: "",
-  contactPhone: "",
-  storeAddress: "",
-  businessHours: defaultBusinessHours,
+type SettingsManagementProps = {
+  initialSection?: string;
 };
 
-const defaultDeliveryValues: DeliveryFormValues = {
-  deliveryFee: 0,
-  freeDeliveryMinimum: 0,
-  estimatedDeliveryTime: "",
-  maxDeliveryRadius: 0,
-  deliveryZones: [],
-};
-
-const defaultPaymentValues: PaymentFormValues = {
-  cashOnDeliveryEnabled: true,
-  cashOnDeliveryMaxAmount: undefined,
-  creditCardsEnabled: true,
-  acceptedCards: "",
-  paypalEnabled: false,
-  applePayEnabled: false,
-  googlePayEnabled: false,
-  stripeEnabled: false,
-  stripePublicKey: "",
-  stripeSecretKey: "",
-  stripeWebhookSecret: "",
-};
-
-const defaultNotificationsValues: NotificationsFormValues = {
-  notifyEmail: true,
-  notifySms: false,
-  notifyPush: true,
-  marketingEnabled: false,
-  marketingFrequency: "",
-  lowStockEnabled: true,
-  lowStockThreshold: undefined,
-  newOrdersEnabled: true,
-  systemUpdatesEnabled: true,
-};
-
-const defaultSystemValues: SystemFormValues = {
-  maintenanceMode: false,
-  allowRegistrations: true,
-  requireEmailVerification: true,
-  sessionTimeout: 30,
-  maxLoginAttempts: 5,
-  dataRetentionDays: 365,
-  backupFrequency: "daily",
-  timezone: "Africa/Cairo",
-  language: "ar",
-  currency: "EGP",
-};
-function mergeBusinessHours(source?: SettingsResponse["general"]["businessHours"]) {
-  const merged: Record<string, z.infer<typeof daySchema>> = { ...defaultBusinessHours };
-  if (source) {
-    for (const key of Object.keys(source)) {
-      const day = key as DayKey;
-      merged[day] = {
-        open: source[key]?.open || merged[day]?.open || "09:00",
-        close: source[key]?.close || merged[day]?.close || "18:00",
-        enabled: typeof source[key]?.enabled === "boolean" ? !!source[key]?.enabled : true,
-      };
-    }
-  }
-  return merged;
-}
-
-function buildGeneralValues(source?: SettingsResponse["general"]): GeneralFormValues {
-  return {
-    storeName: source?.storeName || "",
-    storeDescription: source?.storeDescription || "",
-    contactEmail: source?.contactEmail || "",
-    contactPhone: source?.contactPhone || "",
-    storeAddress: source?.storeAddress || "",
-    businessHours: mergeBusinessHours(source?.businessHours),
-  };
-}
-
-function buildDeliveryValues(source?: SettingsResponse["delivery"]): DeliveryFormValues {
-  return {
-    deliveryFee: source?.deliveryFee ?? 0,
-    freeDeliveryMinimum: source?.freeDeliveryMinimum ?? 0,
-    estimatedDeliveryTime: source?.estimatedDeliveryTime || "",
-    maxDeliveryRadius: source?.maxDeliveryRadius ?? 0,
-    deliveryZones:
-      source?.deliveryZones?.map((zone) => ({
-        name: zone.name,
-        fee: zone.fee,
-        enabled: zone.enabled ?? true,
-      })) || [],
-  };
-}
-
-function buildPaymentValues(source?: SettingsResponse["payment"]): PaymentFormValues {
-  return {
-    cashOnDeliveryEnabled: !!source?.cashOnDelivery?.enabled,
-    cashOnDeliveryMaxAmount: source?.cashOnDelivery?.maxAmount ?? undefined,
-    creditCardsEnabled: !!source?.creditCards?.enabled,
-    acceptedCards: source?.creditCards?.acceptedCards?.join(", ") || "",
-    paypalEnabled: !!source?.digitalWallets?.paypal?.enabled,
-    applePayEnabled: !!source?.digitalWallets?.applePay?.enabled,
-    googlePayEnabled: !!source?.digitalWallets?.googlePay?.enabled,
-    stripeEnabled: !!source?.stripe?.enabled,
-    stripePublicKey: source?.stripe?.publicKey || "",
-    stripeSecretKey: source?.stripe?.secretKey || "",
-    stripeWebhookSecret: source?.stripe?.webhookSecret || "",
-  };
-}
-
-function buildNotificationsValues(source?: SettingsResponse["notifications"]): NotificationsFormValues {
-  return {
-    notifyEmail: !!source?.orderNotifications?.email,
-    notifySms: !!source?.orderNotifications?.sms,
-    notifyPush: !!source?.orderNotifications?.push,
-    marketingEnabled: !!source?.marketingEmails?.enabled,
-    marketingFrequency: source?.marketingEmails?.frequency || "",
-    lowStockEnabled: !!source?.adminAlerts?.lowStock?.enabled,
-    lowStockThreshold: source?.adminAlerts?.lowStock?.threshold ?? undefined,
-    newOrdersEnabled: !!source?.adminAlerts?.newOrders?.enabled,
-    systemUpdatesEnabled: !!source?.adminAlerts?.systemUpdates?.enabled,
-  };
-}
-
-function buildSystemValues(source?: SettingsResponse["system"]): SystemFormValues {
-  return {
-    maintenanceMode: !!source?.maintenanceMode,
-    allowRegistrations: !!source?.allowRegistrations,
-    requireEmailVerification: !!source?.requireEmailVerification,
-    sessionTimeout: source?.sessionTimeout ?? 30,
-    maxLoginAttempts: source?.maxLoginAttempts ?? 5,
-    dataRetentionDays: source?.dataRetentionDays ?? 365,
-    backupFrequency: source?.backupFrequency || "daily",
-    timezone: source?.timezone || "Africa/Cairo",
-    language: source?.language || "ar",
-    currency: source?.currency || "EGP",
-  };
-}
-
-function toGeneralPayload(values: GeneralFormValues): SettingsResponse["general"] {
-  const businessHours: Record<string, z.infer<typeof daySchema>> = {};
-  if (values.businessHours) {
-    for (const day of Object.keys(values.businessHours)) {
-      businessHours[day] = values.businessHours[day];
-    }
-  }
-  return {
-    storeName: values.storeName,
-    storeDescription: values.storeDescription || "",
-    contactEmail: values.contactEmail || "",
-    contactPhone: values.contactPhone || "",
-    storeAddress: values.storeAddress || "",
-    businessHours,
-  };
-}
-
-function toDeliveryPayload(values: DeliveryFormValues): SettingsResponse["delivery"] {
-  return {
-    deliveryFee: values.deliveryFee,
-    freeDeliveryMinimum: values.freeDeliveryMinimum,
-    estimatedDeliveryTime: values.estimatedDeliveryTime,
-    maxDeliveryRadius: values.maxDeliveryRadius,
-    deliveryZones: values.deliveryZones?.map((zone) => ({
-      name: zone.name,
-      fee: zone.fee,
-      enabled: zone.enabled,
-    })) || [],
-  };
-}
-
-function toPaymentPayload(values: PaymentFormValues): SettingsResponse["payment"] {
-  return {
-    cashOnDelivery: {
-      enabled: values.cashOnDeliveryEnabled,
-      maxAmount: values.cashOnDeliveryMaxAmount,
-    },
-    creditCards: {
-      enabled: values.creditCardsEnabled,
-      acceptedCards: values.acceptedCards
-        ? values.acceptedCards
-            .split(",")
-            .map((entry) => entry.trim())
-            .filter(Boolean)
-        : [],
-    },
-    digitalWallets: {
-      paypal: { enabled: values.paypalEnabled },
-      applePay: { enabled: values.applePayEnabled },
-      googlePay: { enabled: values.googlePayEnabled },
-    },
-    stripe: {
-      enabled: values.stripeEnabled,
-      publicKey: values.stripePublicKey || undefined,
-      secretKey: values.stripeSecretKey || undefined,
-      webhookSecret: values.stripeWebhookSecret || undefined,
-    },
-  };
-}
-
-function toNotificationsPayload(values: NotificationsFormValues): SettingsResponse["notifications"] {
-  return {
-    orderNotifications: {
-      email: values.notifyEmail,
-      sms: values.notifySms,
-      push: values.notifyPush,
-    },
-    marketingEmails: {
-      enabled: values.marketingEnabled,
-      frequency: values.marketingFrequency || undefined,
-    },
-    adminAlerts: {
-      lowStock: { enabled: values.lowStockEnabled, threshold: values.lowStockThreshold },
-      newOrders: { enabled: values.newOrdersEnabled },
-      systemUpdates: { enabled: values.systemUpdatesEnabled },
-    },
-  };
-}
-
-function toSystemPayload(values: SystemFormValues): SettingsResponse["system"] {
-  return { ...values };
-}
-
-type SettingsTab = "general" | "delivery" | "payment" | "notifications" | "system";
-export function SettingsManagement() {
+export function SettingsManagement({ initialSection }: SettingsManagementProps) {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const { data: settings, isLoading, isError, refetch } = useSettingsAdmin();
-  const [tab, setTab] = useState<SettingsTab>("general");
+  const navigate = useNavigate();
+  const settingsQuery = useSettingsAdmin();
+  const zonesQuery = useDeliveryZones({ page: 1, pageSize: 100, isActive: true });
+  const generalMutation = useUpdateSettingsSection("general");
+  const deliveryMutation = useUpdateSettingsSection("delivery");
+  const paymentsMutation = useUpdateSettingsSection("payments");
+  const notificationsMutation = useUpdateSettingsSection("notifications");
+  const systemMutation = useUpdateSettingsSection("system");
+
+  const [activeTab, setActiveTab] = React.useState(() => {
+    if (initialSection === "delivery") return "delivery";
+    if (initialSection === "delivery-zones") return "delivery";
+    return initialSection || "general";
+  });
 
   const generalForm = useForm<GeneralFormValues>({
-    resolver: zodResolver(generalSchema),
-    defaultValues: defaultGeneralValues,
-  });
-  const deliveryForm = useForm<DeliveryFormValues>({
-    resolver: zodResolver(deliverySchema),
-    defaultValues: defaultDeliveryValues,
-  });
-  const paymentForm = useForm<PaymentFormValues>({
-    resolver: zodResolver(paymentSchema),
-    defaultValues: defaultPaymentValues,
-  });
-  const notificationsForm = useForm<NotificationsFormValues>({
-    resolver: zodResolver(notificationsSchema),
-    defaultValues: defaultNotificationsValues,
-  });
-  const systemForm = useForm<SystemFormValues>({
-    resolver: zodResolver(systemSchema),
-    defaultValues: defaultSystemValues,
+    resolver: zodResolver(generalSchema) as Resolver<GeneralFormValues>,
+    defaultValues: {
+      storeName: "",
+      storeDescription: "",
+      contactEmail: "",
+      contactPhone: "",
+      storeAddress: "",
+      timezone: "",
+      language: "",
+      currency: "",
+    },
   });
 
-  const {
-    fields: zoneFields,
-    append: appendZone,
-    remove: removeZone,
-  } = useFieldArray({
+  const deliveryForm = useForm<DeliveryFormValues>({
+    resolver: zodResolver(deliverySchema) as Resolver<DeliveryFormValues>,
+    defaultValues: {
+      deliveryEnabled: true,
+      defaultDeliveryFeeCents: 0,
+      freeDeliveryThresholdCents: 0,
+      perZoneOverrides: [],
+    },
+  });
+
+  const paymentsForm = useForm<PaymentFormValues>({
+    resolver: zodResolver(paymentSchema) as Resolver<PaymentFormValues>,
+    defaultValues: {
+      cashOnDeliveryEnabled: true,
+      cashOnDeliveryMaxAmount: null,
+      stripeEnabled: false,
+      stripePublicKey: "",
+      stripeSecretKey: "",
+    },
+  });
+
+  const notificationsForm = useForm<NotificationsFormValues>({
+    resolver: zodResolver(notificationsSchema) as Resolver<NotificationsFormValues>,
+    defaultValues: {
+      notifyEmail: true,
+      notifySms: false,
+      notifyPush: false,
+      marketingEnabled: false,
+    },
+  });
+
+  const systemForm = useForm<SystemFormValues>({
+    resolver: zodResolver(systemSchema) as Resolver<SystemFormValues>,
+    defaultValues: {
+      maintenanceMode: false,
+      allowRegistrations: true,
+      requireEmailVerification: true,
+      sessionTimeout: 30,
+    },
+  });
+
+  const { fields: zoneOverrideFields, replace: replaceOverrides } = useFieldArray({
     control: deliveryForm.control,
-    name: "deliveryZones",
+    name: "perZoneOverrides",
   });
 
   useEffect(() => {
-    if (!settings) return;
-    generalForm.reset(buildGeneralValues(settings.general));
-    deliveryForm.reset(buildDeliveryValues(settings.delivery));
-    paymentForm.reset(buildPaymentValues(settings.payment));
-    notificationsForm.reset(buildNotificationsValues(settings.notifications));
-    systemForm.reset(buildSystemValues(settings.system));
-  }, [settings, generalForm, deliveryForm, paymentForm, notificationsForm, systemForm]);
+    if (settingsQuery.data?.general) {
+      const g = settingsQuery.data.general as GeneralSettings;
+      generalForm.reset({
+        storeName: g.storeName || "",
+        storeDescription: g.storeDescription || "",
+        contactEmail: g.contactEmail || "",
+        contactPhone: g.contactPhone || "",
+        storeAddress: g.storeAddress || "",
+        timezone: g.timezone || "",
+        language: g.language || "",
+        currency: g.currency || "",
+      });
+    }
+  }, [settingsQuery.data?.general, generalForm]);
 
-  const onSuccess = (message: string) => {
-    toast.success(message);
-    queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY });
-  };
+  useEffect(() => {
+    const d = settingsQuery.data?.delivery as DeliverySettings | undefined;
+    if (!d) return;
 
-  const handleError = (error: unknown) => {
-    toast.error(getApiErrorMessage(error, t("settings.saveError") || "Unable to save settings"));
-  };
+    const overridesMap = new Map<string, { deliveryFeeCents: number; freeDeliveryThresholdCents?: number | null }>(
+      (d.perZoneOverrides || []).map((o) => [o.zoneId, { deliveryFeeCents: o.deliveryFeeCents, freeDeliveryThresholdCents: o.freeDeliveryThresholdCents }])
+    );
 
-  const generalMutation = useMutation({
-    mutationFn: (values: GeneralFormValues) => updateGeneral(toGeneralPayload(values)),
-    onSuccess: () => onSuccess(t("settings.generalSaved") || "General settings saved"),
-    onError: handleError,
+    const zoneOverrides = (zonesQuery.data?.items || []).map((zone) => {
+      const override = overridesMap.get(zone.id);
+      return {
+        zoneId: zone.id,
+        deliveryFeeCents: override?.deliveryFeeCents ?? d.defaultDeliveryFeeCents ?? 0,
+        freeDeliveryThresholdCents: override?.freeDeliveryThresholdCents ?? d.freeDeliveryThresholdCents ?? 0,
+      };
+    });
+
+    replaceOverrides(zoneOverrides);
+
+    deliveryForm.reset({
+      deliveryEnabled: d.deliveryEnabled ?? true,
+      defaultDeliveryFeeCents: d.defaultDeliveryFeeCents ?? 0,
+      freeDeliveryThresholdCents: d.freeDeliveryThresholdCents ?? 0,
+      perZoneOverrides: zoneOverrides,
+    });
+  }, [settingsQuery.data?.delivery, zonesQuery.data?.items, deliveryForm, replaceOverrides]);
+
+  useEffect(() => {
+    const p = settingsQuery.data?.payments as PaymentSettings | undefined;
+    if (!p) return;
+    paymentsForm.reset({
+      cashOnDeliveryEnabled: p.cashOnDelivery?.enabled ?? true,
+      cashOnDeliveryMaxAmount: p.cashOnDelivery?.maxAmount ?? null,
+      stripeEnabled: p.stripe?.enabled ?? false,
+      stripePublicKey: p.stripe?.publicKey ?? "",
+      stripeSecretKey: p.stripe?.secretKey ?? "",
+    });
+  }, [settingsQuery.data?.payments, paymentsForm]);
+
+  useEffect(() => {
+    const n = settingsQuery.data?.notifications as NotificationsSettings | undefined;
+    if (!n) return;
+    notificationsForm.reset({
+      notifyEmail: n.orderNotifications?.email ?? true,
+      notifySms: n.orderNotifications?.sms ?? false,
+      notifyPush: n.orderNotifications?.push ?? false,
+      marketingEnabled: n.marketingEmails?.enabled ?? false,
+    });
+  }, [settingsQuery.data?.notifications, notificationsForm]);
+
+  useEffect(() => {
+    const s = settingsQuery.data?.system as SystemSettings | undefined;
+    if (!s) return;
+    systemForm.reset({
+      maintenanceMode: s.maintenanceMode ?? false,
+      allowRegistrations: s.allowRegistrations ?? true,
+      requireEmailVerification: s.requireEmailVerification ?? true,
+      sessionTimeout: s.sessionTimeout ?? 30,
+    });
+  }, [settingsQuery.data?.system, systemForm]);
+
+  const handleGeneralSave = generalForm.handleSubmit(async (values) => {
+    try {
+      await generalMutation.mutateAsync(values);
+      toast.success(t("settings.saved", "Settings updated"));
+    } catch (error) {
+      toast.error(getAdminErrorMessage(error, t));
+    }
   });
 
-  const deliveryMutation = useMutation({
-    mutationFn: (values: DeliveryFormValues) => updateDelivery(toDeliveryPayload(values)),
-    onSuccess: () => onSuccess(t("settings.deliverySaved") || "Delivery settings saved"),
-    onError: handleError,
+  const handleDeliverySave = deliveryForm.handleSubmit(async (values) => {
+    const payload: DeliverySettings = {
+      deliveryEnabled: values.deliveryEnabled,
+      defaultDeliveryFeeCents: Math.round(values.defaultDeliveryFeeCents),
+      freeDeliveryThresholdCents: Math.round(values.freeDeliveryThresholdCents),
+      perZoneOverrides: values.perZoneOverrides?.map((z) => ({
+        zoneId: z.zoneId,
+        deliveryFeeCents: Math.round(z.deliveryFeeCents),
+        freeDeliveryThresholdCents: z.freeDeliveryThresholdCents != null ? Math.round(z.freeDeliveryThresholdCents) : undefined,
+      })),
+    };
+    try {
+      await deliveryMutation.mutateAsync(payload);
+      toast.success(t("settings.saved", "Settings updated"));
+    } catch (error) {
+      toast.error(getAdminErrorMessage(error, t));
+    }
   });
 
-  const paymentMutation = useMutation({
-    mutationFn: (values: PaymentFormValues) => updatePayment(toPaymentPayload(values)),
-    onSuccess: () => onSuccess(t("settings.paymentSaved") || "Payment settings saved"),
-    onError: handleError,
+  const handlePaymentsSave = paymentsForm.handleSubmit(async (values) => {
+    const payload: PaymentSettings = {
+      cashOnDelivery: { enabled: values.cashOnDeliveryEnabled, maxAmount: values.cashOnDeliveryMaxAmount ?? undefined },
+      stripe: {
+        enabled: values.stripeEnabled,
+        publicKey: values.stripePublicKey,
+        secretKey: values.stripeSecretKey,
+      },
+    };
+    try {
+      await paymentsMutation.mutateAsync(payload);
+      toast.success(t("settings.saved", "Settings updated"));
+    } catch (error) {
+      toast.error(getAdminErrorMessage(error, t));
+    }
   });
 
-  const notificationsMutation = useMutation({
-    mutationFn: (values: NotificationsFormValues) => updateNotifications(toNotificationsPayload(values)),
-    onSuccess: () => onSuccess(t("settings.notificationsSaved") || "Notifications saved"),
-    onError: handleError,
+  const handleNotificationsSave = notificationsForm.handleSubmit(async (values) => {
+    const payload: NotificationsSettings = {
+      orderNotifications: { email: values.notifyEmail, sms: values.notifySms, push: values.notifyPush },
+      marketingEmails: { enabled: values.marketingEnabled },
+    };
+    try {
+      await notificationsMutation.mutateAsync(payload);
+      toast.success(t("settings.saved", "Settings updated"));
+    } catch (error) {
+      toast.error(getAdminErrorMessage(error, t));
+    }
   });
 
-  const systemMutation = useMutation({
-    mutationFn: (values: SystemFormValues) => updateSystem(toSystemPayload(values)),
-    onSuccess: () => onSuccess(t("settings.systemSaved") || "System settings saved"),
-    onError: handleError,
+  const handleSystemSave = systemForm.handleSubmit(async (values) => {
+    const payload: SystemSettings = {
+      maintenanceMode: values.maintenanceMode,
+      allowRegistrations: values.allowRegistrations,
+      requireEmailVerification: values.requireEmailVerification,
+      sessionTimeout: values.sessionTimeout,
+    };
+    try {
+      await systemMutation.mutateAsync(payload);
+      toast.success(t("settings.saved", "Settings updated"));
+    } catch (error) {
+      toast.error(getAdminErrorMessage(error, t));
+    }
   });
 
-  if (isLoading) {
-    return <SettingsSkeleton />;
-  }
-
-  if (isError) {
+  if (settingsQuery.isLoading) {
     return (
       <div className="p-6">
-        <ErrorState message={t("settings.loadError") || "Failed to load settings"} onRetry={refetch} />
+        <AdminTableSkeleton rows={4} columns={2} />
       </div>
     );
   }
 
-  if (!settings) {
+  if (settingsQuery.isError) {
     return (
       <div className="p-6">
-        <EmptyState
-          title={t("settings.emptyTitle") || "No settings available"}
-          description={t("settings.emptyDescription") || "Configure the store to get started."}
-          action={<Button onClick={() => refetch()}>{t("app.actions.retry") || "Retry"}</Button>}
-        />
+        <ErrorState message={t("settings.loadError", "Unable to load settings")} onRetry={() => settingsQuery.refetch()} />
+      </div>
+    );
+  }
+
+  if (!settingsQuery.data) {
+    return (
+      <div className="p-6">
+        <EmptyState title={t("settings.empty", "No settings")} description={t("settings.emptyDesc", "Unable to load settings")} />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold">{t("settings.title") || "Settings"}</h1>
-        <p className="text-muted-foreground">
-          {t("settings.subtitle") || "Manage every part of the admin experience"}
-        </p>
+    <div className="p-4 lg:p-6 space-y-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">{t("settings.title", "Settings")}</h1>
+          <p className="text-muted-foreground">{t("settings.subtitle", "Control how your store behaves")}</p>
+        </div>
+        <Button variant="outline" onClick={() => navigate("/settings/delivery-zones")}>
+          {t("zones.manage", "Manage delivery zones")}
+        </Button>
       </div>
 
-      <Tabs value={tab} onValueChange={(value) => setTab(value as SettingsTab)} className="space-y-6">
-        <TabsList className="w-full grid grid-cols-2 md:grid-cols-5">
-          <TabsTrigger value="general">{t("settings.general")}</TabsTrigger>
-          <TabsTrigger value="delivery">{t("settings.delivery")}</TabsTrigger>
-          <TabsTrigger value="payment">{t("settings.payment")}</TabsTrigger>
-          <TabsTrigger value="notifications">{t("settings.notifications")}</TabsTrigger>
-          <TabsTrigger value="system">{t("settings.system")}</TabsTrigger>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="flex flex-wrap">
+          <TabsTrigger value="general">{t("settings.general", "General")}</TabsTrigger>
+          <TabsTrigger value="delivery">{t("settings.delivery", "Delivery")}</TabsTrigger>
+          <TabsTrigger value="payments">{t("settings.payments", "Payments")}</TabsTrigger>
+          <TabsTrigger value="notifications">{t("settings.notifications", "Notifications")}</TabsTrigger>
+          <TabsTrigger value="system">{t("settings.system", "System")}</TabsTrigger>
         </TabsList>
-        <TabsContent value="general" className="space-y-4">
+
+        <TabsContent value="general" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>{t("settings.general")}</CardTitle>
+              <CardTitle>{t("settings.general", "General")}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <form
-                className="space-y-6"
-                onSubmit={generalForm.handleSubmit((values) => generalMutation.mutate(values))}
-              >
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="storeName">{t("settings.generalFields.storeName")}</Label>
-                    <Input id="storeName" {...generalForm.register("storeName")} />
-                    {generalForm.formState.errors.storeName && (
-                      <p className="text-sm text-rose-500">{generalForm.formState.errors.storeName.message}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="contactEmail">{t("settings.generalFields.contactEmail")}</Label>
-                    <Input id="contactEmail" type="email" {...generalForm.register("contactEmail")} />
-                    {generalForm.formState.errors.contactEmail && (
-                      <p className="text-sm text-rose-500">{generalForm.formState.errors.contactEmail.message}</p>
-                    )}
-                  </div>
-                </div>
-
+            <CardContent>
+              <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleGeneralSave}>
                 <div className="space-y-2">
-                  <Label htmlFor="storeDescription">{t("settings.generalFields.storeDescription")}</Label>
-                  <Textarea id="storeDescription" rows={3} {...generalForm.register("storeDescription")} />
+                  <Label>{t("settings.storeName", "Store name")}</Label>
+                  <Input {...generalForm.register("storeName")} />
                 </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="contactPhone">{t("settings.generalFields.contactPhone")}</Label>
-                    <Input id="contactPhone" {...generalForm.register("contactPhone")} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="storeAddress">{t("settings.generalFields.storeAddress")}</Label>
-                    <Input id="storeAddress" {...generalForm.register("storeAddress")} />
-                  </div>
+                <div className="space-y-2">
+                  <Label>{t("settings.storeDescription", "Description")}</Label>
+                  <Input {...generalForm.register("storeDescription")} />
                 </div>
-
-                <div className="space-y-3">
-                  <h3 className="font-semibold">{t("settings.generalFields.businessHours")}</h3>
-                  {days.map((day) => (
-                    <div key={day} className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between border rounded-lg p-3">
-                      <div className="flex items-center gap-3">
-                        <Controller
-                          control={generalForm.control}
-                          name={`businessHours.${day}.enabled`}
-                          render={({ field }) => (
-                            <Switch checked={field.value ?? true} onCheckedChange={field.onChange} />
-                          )}
-                        />
-                        <span className="capitalize">{t(`weekdays.${day}`, day)}</span>
-                      </div>
-                      {generalForm.watch(`businessHours.${day}.enabled`) !== false && (
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="time"
-                            className="w-28"
-                            {...generalForm.register(`businessHours.${day}.open`)}
-                          />
-                          <span>-</span>
-                          <Input
-                            type="time"
-                            className="w-28"
-                            {...generalForm.register(`businessHours.${day}.close`)}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                <div className="space-y-2">
+                  <Label>{t("settings.contactEmail", "Contact email")}</Label>
+                  <Input type="email" {...generalForm.register("contactEmail")} />
                 </div>
-
-                <div className="flex gap-3">
+                <div className="space-y-2">
+                  <Label>{t("settings.contactPhone", "Contact phone")}</Label>
+                  <Input {...generalForm.register("contactPhone")} />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t("settings.storeAddress", "Store address")}</Label>
+                  <Input {...generalForm.register("storeAddress")} />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t("settings.timezone", "Timezone")}</Label>
+                  <Input {...generalForm.register("timezone")} />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t("settings.language", "Language")}</Label>
+                  <Input {...generalForm.register("language")} />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t("settings.currency", "Currency")}</Label>
+                  <Input {...generalForm.register("currency")} />
+                </div>
+                <div className="md:col-span-2 flex justify-end">
                   <Button type="submit" disabled={generalMutation.isPending}>
-                    {generalMutation.isPending ? t("app.saving") || "Saving..." : t("app.actions.save")}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => generalForm.reset(buildGeneralValues(settings.general))}
-                  >
-                    {t("app.actions.reset")}
+                    {generalMutation.isPending ? t("common.saving", "Saving...") : t("common.save", "Save")}
                   </Button>
                 </div>
               </form>
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value="delivery">
+
+        <TabsContent value="delivery" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>{t("settings.delivery")}</CardTitle>
+              <CardTitle>{t("settings.delivery", "Delivery settings")}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <form
-                className="space-y-6"
-                onSubmit={deliveryForm.handleSubmit((values) => deliveryMutation.mutate(values))}
-              >
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="deliveryFee">{t("settings.deliveryFields.deliveryFee")}</Label>
-                    <Input id="deliveryFee" type="number" step="0.01" {...deliveryForm.register("deliveryFee", { valueAsNumber: true })} />
+            <CardContent className="space-y-4">
+              <form className="space-y-4" onSubmit={handleDeliverySave}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center justify-between border rounded-lg p-3">
+                    <div>
+                      <p className="font-medium">{t("settings.deliveryEnabled", "Enable delivery")}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {t("settings.deliveryEnabledHint", "Toggle customer delivery availability")}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={deliveryForm.watch("deliveryEnabled")}
+                      onCheckedChange={(checked) => deliveryForm.setValue("deliveryEnabled", checked)}
+                    />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="freeDeliveryMinimum">{t("settings.deliveryFields.freeDeliveryMinimum")}</Label>
-                    <Input id="freeDeliveryMinimum" type="number" step="0.01" {...deliveryForm.register("freeDeliveryMinimum", { valueAsNumber: true })} />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="estimatedDeliveryTime">{t("settings.deliveryFields.estimatedDeliveryTime")}</Label>
-                    <Input id="estimatedDeliveryTime" {...deliveryForm.register("estimatedDeliveryTime")} />
+                    <Label>{t("settings.defaultDeliveryFee", "Default fee (cents)")}</Label>
+                    <Input type="number" {...deliveryForm.register("defaultDeliveryFeeCents", { valueAsNumber: true })} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="maxDeliveryRadius">{t("settings.deliveryFields.maxDeliveryRadius")}</Label>
-                    <Input id="maxDeliveryRadius" type="number" step="0.1" {...deliveryForm.register("maxDeliveryRadius", { valueAsNumber: true })} />
+                    <Label>{t("settings.freeDeliveryThreshold", "Free delivery threshold (cents)")}</Label>
+                    <Input
+                      type="number"
+                      {...deliveryForm.register("freeDeliveryThresholdCents", { valueAsNumber: true })}
+                    />
                   </div>
                 </div>
 
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-semibold">{t("settings.deliveryFields.deliveryZones")}</h3>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => appendZone({ name: "", fee: 0, enabled: true } as DeliveryZoneFormValue)}
-                    >
-                      {t("app.actions.add")}
-                    </Button>
+                    <h3 className="font-semibold">{t("settings.zoneOverrides", "Per-zone overrides")}</h3>
+                    <Badge variant="outline">{t("settings.liveZones", "Live zones: {{count}}", { count: zoneOverrideFields.length })}</Badge>
                   </div>
-                  {zoneFields.length === 0 && (
-                    <p className="text-sm text-muted-foreground">{t("settings.deliveryFields.noZones")}</p>
-                  )}
                   <div className="space-y-3">
-                    {zoneFields.map((field, index) => (
-                      <div key={field.id} className="grid gap-3 border rounded-lg p-3 md:grid-cols-4">
-                        <Input
-                          placeholder={t("settings.deliveryFields.zoneName") || "Zone name"}
-                          {...deliveryForm.register(`deliveryZones.${index}.name` as const)}
-                        />
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder={t("settings.deliveryFields.zoneFee") || "Fee"}
-                          {...deliveryForm.register(`deliveryZones.${index}.fee` as const, {
-                            valueAsNumber: true,
-                          })}
-                        />
-                        <div className="flex items-center gap-2">
-                          <Controller
-                            control={deliveryForm.control}
-                            name={`deliveryZones.${index}.enabled` as const}
-                            render={({ field }) => (
-                              <Switch checked={field.value ?? true} onCheckedChange={field.onChange} />
-                            )}
-                          />
-                          <span>{t("settings.deliveryFields.zoneEnabled") || "Active"}</span>
+                    {zoneOverrideFields.length === 0 && (
+                      <p className="text-sm text-muted-foreground">{t("zones.emptyDesc", "No zones found. Add a zone first.")}</p>
+                    )}
+                    {zoneOverrideFields.map((field, idx) => (
+                      <div key={field.id} className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 border rounded-lg">
+                        <div>
+                          <p className="font-medium">{zonesQuery.data?.items?.find((z) => z.id === field.zoneId)?.name || field.zoneId}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {zonesQuery.data?.items?.find((z) => z.id === field.zoneId)?.city}
+                          </p>
                         </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="justify-start text-rose-500"
-                          onClick={() => removeZone(index)}
-                        >
-                          {t("app.actions.remove")}
-                        </Button>
+                        <div className="space-y-1">
+                          <Label>{t("settings.deliveryFeeOverride", "Delivery fee (cents)")}</Label>
+                          <Input
+                            type="number"
+                            {...deliveryForm.register(`perZoneOverrides.${idx}.deliveryFeeCents` as const, { valueAsNumber: true })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>{t("settings.freeThresholdOverride", "Free threshold (cents)")}</Label>
+                          <Input
+                            type="number"
+                            {...deliveryForm.register(`perZoneOverrides.${idx}.freeDeliveryThresholdCents` as const, { valueAsNumber: true })}
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="flex gap-3">
+                <div className="flex justify-end">
                   <Button type="submit" disabled={deliveryMutation.isPending}>
-                    {deliveryMutation.isPending ? t("app.saving") || "Saving..." : t("app.actions.save")}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => deliveryForm.reset(buildDeliveryValues(settings.delivery))}
-                  >
-                    {t("app.actions.reset")}
+                    {deliveryMutation.isPending ? t("common.saving", "Saving...") : t("common.save", "Save")}
                   </Button>
                 </div>
               </form>
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value="payment">
+
+        <TabsContent value="payments" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>{t("settings.payment")}</CardTitle>
+              <CardTitle>{t("settings.payments", "Payments")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <form
-                className="space-y-6"
-                onSubmit={paymentForm.handleSubmit((values) => paymentMutation.mutate(values))}
-              >
-                <section className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2 border rounded-lg p-3">
-                    <Label>{t("settings.paymentFields.cashOnDelivery")}</Label>
-                    <Controller
-                      control={paymentForm.control}
-                      name="cashOnDeliveryEnabled"
-                      render={({ field }) => (
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      )}
-                    />
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder={t("settings.paymentFields.maxAmount") || "Max amount"}
-                      {...paymentForm.register("cashOnDeliveryMaxAmount", { valueAsNumber: true })}
-                    />
-                  </div>
-                  <div className="space-y-2 border rounded-lg p-3">
-                    <Label>{t("settings.paymentFields.creditCards")}</Label>
-                    <Controller
-                      control={paymentForm.control}
-                      name="creditCardsEnabled"
-                      render={({ field }) => (
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      )}
-                    />
-                    <Input
-                      placeholder={t("settings.paymentFields.acceptedCards") || "Visa, Mastercard"}
-                      {...paymentForm.register("acceptedCards")}
-                    />
-                  </div>
-                </section>
-
-                <section className="grid gap-4 md:grid-cols-3">
-                  {(["paypalEnabled", "applePayEnabled", "googlePayEnabled"] as const).map((wallet) => (
-                    <div key={wallet} className="flex items-center justify-between border rounded-lg p-3">
-                      <span className="font-medium">{t(`settings.paymentFields.${wallet}`, wallet)}</span>
-                      <Controller
-                        control={paymentForm.control}
-                        name={wallet}
-                        render={({ field }) => (
-                          <Switch checked={field.value} onCheckedChange={field.onChange} />
-                        )}
-                      />
+              <form className="space-y-4" onSubmit={handlePaymentsSave}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center justify-between border rounded-lg p-3">
+                    <div>
+                      <p className="font-medium">{t("settings.cod", "Cash on delivery")}</p>
+                      <p className="text-sm text-muted-foreground">{t("settings.codHint", "Allow cash payments")}</p>
                     </div>
-                  ))}
-                </section>
-
-                <section className="space-y-3 border rounded-lg p-3">
-                  <div className="flex items-center justify-between">
-                    <Label>{t("settings.paymentFields.stripe")}</Label>
-                    <Controller
-                      control={paymentForm.control}
-                      name="stripeEnabled"
-                      render={({ field }) => (
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      )}
+                    <Switch
+                      checked={paymentsForm.watch("cashOnDeliveryEnabled")}
+                      onCheckedChange={(checked) => paymentsForm.setValue("cashOnDeliveryEnabled", checked)}
                     />
                   </div>
-                  <Input placeholder="pk_live_..." {...paymentForm.register("stripePublicKey")} />
-                  <Input placeholder="sk_live_..." {...paymentForm.register("stripeSecretKey")} />
-                  <Input placeholder="whsec_..." {...paymentForm.register("stripeWebhookSecret")} />
-                </section>
-
-                <div className="flex gap-3">
-                  <Button type="submit" disabled={paymentMutation.isPending}>
-                    {paymentMutation.isPending ? t("app.saving") || "Saving..." : t("app.actions.save")}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => paymentForm.reset(buildPaymentValues(settings.payment))}
-                  >
-                    {t("app.actions.reset")}
+                  <div className="space-y-2">
+                    <Label>{t("settings.codLimit", "COD max amount")}</Label>
+                    <Input type="number" {...paymentsForm.register("cashOnDeliveryMaxAmount", { valueAsNumber: true })} />
+                  </div>
+                  <div className="flex items-center justify-between border rounded-lg p-3 md:col-span-2">
+                    <div>
+                      <p className="font-medium">{t("settings.stripe", "Stripe")}</p>
+                      <p className="text-sm text-muted-foreground">{t("settings.stripeHint", "Enable card payments")}</p>
+                    </div>
+                    <Switch
+                      checked={paymentsForm.watch("stripeEnabled")}
+                      onCheckedChange={(checked) => paymentsForm.setValue("stripeEnabled", checked)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Stripe Public Key</Label>
+                    <Input {...paymentsForm.register("stripePublicKey")} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Stripe Secret Key</Label>
+                    <Input {...paymentsForm.register("stripeSecretKey")} />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={paymentsMutation.isPending}>
+                    {paymentsMutation.isPending ? t("common.saving", "Saving...") : t("common.save", "Save")}
                   </Button>
                 </div>
               </form>
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value="notifications">
+
+        <TabsContent value="notifications" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>{t("settings.notifications")}</CardTitle>
+              <CardTitle>{t("settings.notifications", "Notifications")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <form
-                className="space-y-6"
-                onSubmit={notificationsForm.handleSubmit((values) => notificationsMutation.mutate(values))}
-              >
-                <section className="grid gap-3 md:grid-cols-3">
-                  {([
-                    ["notifyEmail", "settings.notificationsFields.email"],
-                    ["notifySms", "settings.notificationsFields.sms"],
-                    ["notifyPush", "settings.notificationsFields.push"],
-                  ] as const).map(([name, label]) => (
-                    <div key={name} className="flex items-center justify-between border rounded-lg p-3">
-                      <span>{t(label)}</span>
-                      <Controller
-                        control={notificationsForm.control}
-                        name={name}
-                        render={({ field }) => (
-                          <Switch checked={field.value} onCheckedChange={field.onChange} />
-                        )}
-                      />
-                    </div>
-                  ))}
-                </section>
-
-                <section className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2 border rounded-lg p-3">
-                    <div className="flex items-center justify-between">
-                      <span>{t("settings.notificationsFields.marketingEmails")}</span>
-                      <Controller
-                        control={notificationsForm.control}
-                        name="marketingEnabled"
-                        render={({ field }) => (
-                          <Switch checked={field.value} onCheckedChange={field.onChange} />
-                        )}
-                      />
-                    </div>
-                    <Input
-                      placeholder={t("settings.notificationsFields.frequency") || "weekly"}
-                      {...notificationsForm.register("marketingFrequency")}
-                    />
-                  </div>
-                  <div className="space-y-2 border rounded-lg p-3">
-                    <div className="flex items-center justify-between">
-                      <span>{t("settings.notificationsFields.lowStock")}</span>
-                      <Controller
-                        control={notificationsForm.control}
-                        name="lowStockEnabled"
-                        render={({ field }) => (
-                          <Switch checked={field.value} onCheckedChange={field.onChange} />
-                        )}
-                      />
-                    </div>
-                    <Input
-                      type="number"
-                      placeholder={t("settings.notificationsFields.threshold") || "5"}
-                      {...notificationsForm.register("lowStockThreshold", { valueAsNumber: true })}
-                    />
-                  </div>
-                </section>
-
-                <section className="grid gap-4 md:grid-cols-2">
-                  <div className="flex items-center justify-between border rounded-lg p-3">
-                    <span>{t("settings.notificationsFields.newOrders")}</span>
-                    <Controller
-                      control={notificationsForm.control}
-                      name="newOrdersEnabled"
-                      render={({ field }) => (
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      )}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between border rounded-lg p-3">
-                    <span>{t("settings.notificationsFields.systemUpdates")}</span>
-                    <Controller
-                      control={notificationsForm.control}
-                      name="systemUpdatesEnabled"
-                      render={({ field }) => (
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      )}
-                    />
-                  </div>
-                </section>
-
-                <div className="flex gap-3">
+              <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleNotificationsSave}>
+                <ToggleField
+                  label={t("settings.notifyEmail", "Email notifications")}
+                  description={t("settings.notifyEmailDesc", "Send order updates via email")}
+                  checked={notificationsForm.watch("notifyEmail")}
+                  onChange={(v) => notificationsForm.setValue("notifyEmail", v)}
+                />
+                <ToggleField
+                  label={t("settings.notifySms", "SMS notifications")}
+                  description={t("settings.notifySmsDesc", "Send SMS updates")}
+                  checked={notificationsForm.watch("notifySms")}
+                  onChange={(v) => notificationsForm.setValue("notifySms", v)}
+                />
+                <ToggleField
+                  label={t("settings.notifyPush", "Push notifications")}
+                  description={t("settings.notifyPushDesc", "Send push updates")}
+                  checked={notificationsForm.watch("notifyPush")}
+                  onChange={(v) => notificationsForm.setValue("notifyPush", v)}
+                />
+                <ToggleField
+                  label={t("settings.marketing", "Marketing emails")}
+                  description={t("settings.marketingDesc", "Enable promotional emails")}
+                  checked={notificationsForm.watch("marketingEnabled")}
+                  onChange={(v) => notificationsForm.setValue("marketingEnabled", v)}
+                />
+                <div className="md:col-span-2 flex justify-end">
                   <Button type="submit" disabled={notificationsMutation.isPending}>
-                    {notificationsMutation.isPending ? t("app.saving") || "Saving..." : t("app.actions.save")}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => notificationsForm.reset(buildNotificationsValues(settings.notifications))}
-                  >
-                    {t("app.actions.reset")}
+                    {notificationsMutation.isPending ? t("common.saving", "Saving...") : t("common.save", "Save")}
                   </Button>
                 </div>
               </form>
             </CardContent>
           </Card>
         </TabsContent>
-        <TabsContent value="system">
+
+        <TabsContent value="system" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>{t("settings.system")}</CardTitle>
+              <CardTitle>{t("settings.system", "System")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <form
-                className="space-y-6"
-                onSubmit={systemForm.handleSubmit((values) => systemMutation.mutate(values))}
-              >
-                <section className="grid gap-4 md:grid-cols-2">
-                  {([
-                    ["maintenanceMode", "settings.systemFields.maintenanceMode"],
-                    ["allowRegistrations", "settings.systemFields.allowRegistrations"],
-                    ["requireEmailVerification", "settings.systemFields.requireEmailVerification"],
-                  ] as const).map(([name, label]) => (
-                    <div key={name} className="flex items-center justify-between border rounded-lg p-3">
-                      <span>{t(label)}</span>
-                      <Controller
-                        control={systemForm.control}
-                        name={name}
-                        render={({ field }) => (
-                          <Switch checked={field.value} onCheckedChange={field.onChange} />
-                        )}
-                      />
-                    </div>
-                  ))}
-                </section>
-
-                <section className="grid gap-4 md:grid-cols-3">
-                  <Input
-                    type="number"
-                    placeholder={t("settings.systemFields.sessionTimeout") || "30"}
-                    {...systemForm.register("sessionTimeout", { valueAsNumber: true })}
-                  />
-                  <Input
-                    type="number"
-                    placeholder={t("settings.systemFields.maxLoginAttempts") || "5"}
-                    {...systemForm.register("maxLoginAttempts", { valueAsNumber: true })}
-                  />
-                  <Input
-                    type="number"
-                    placeholder={t("settings.systemFields.dataRetentionDays") || "365"}
-                    {...systemForm.register("dataRetentionDays", { valueAsNumber: true })}
-                  />
-                </section>
-
-                <section className="grid gap-4 md:grid-cols-3">
-                  <Input
-                    placeholder={t("settings.systemFields.backupFrequency") || "daily"}
-                    {...systemForm.register("backupFrequency")}
-                  />
-                  <Input
-                    placeholder={t("settings.systemFields.timezone") || "Africa/Cairo"}
-                    {...systemForm.register("timezone")}
-                  />
-                  <Input
-                    placeholder={t("settings.systemFields.language") || "ar"}
-                    {...systemForm.register("language")}
-                  />
-                  <Input
-                    placeholder={t("settings.systemFields.currency") || "EGP"}
-                    {...systemForm.register("currency")}
-                  />
-                </section>
-
-                <div className="flex gap-3">
+              <form className="space-y-4" onSubmit={handleSystemSave}>
+                <ToggleField
+                  label={t("settings.maintenance", "Maintenance mode")}
+                  description={t("settings.maintenanceDesc", "Pause storefront while you work")}
+                  checked={systemForm.watch("maintenanceMode")}
+                  onChange={(v) => systemForm.setValue("maintenanceMode", v)}
+                />
+                <ToggleField
+                  label={t("settings.allowRegistrations", "Allow registrations")}
+                  description={t("settings.allowRegistrationsDesc", "Let new customers sign up")}
+                  checked={systemForm.watch("allowRegistrations")}
+                  onChange={(v) => systemForm.setValue("allowRegistrations", v)}
+                />
+                <ToggleField
+                  label={t("settings.requireEmailVerification", "Require email verification")}
+                  description={t("settings.requireEmailVerificationDesc", "Force verification for new accounts")}
+                  checked={systemForm.watch("requireEmailVerification")}
+                  onChange={(v) => systemForm.setValue("requireEmailVerification", v)}
+                />
+                <div className="space-y-2">
+                  <Label>{t("settings.sessionTimeout", "Session timeout (minutes)")}</Label>
+                  <Input type="number" {...systemForm.register("sessionTimeout", { valueAsNumber: true })} />
+                </div>
+                <div className="flex justify-end">
                   <Button type="submit" disabled={systemMutation.isPending}>
-                    {systemMutation.isPending ? t("app.saving") || "Saving..." : t("app.actions.save")}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => systemForm.reset(buildSystemValues(settings.system))}
-                  >
-                    {t("app.actions.reset")}
+                    {systemMutation.isPending ? t("common.saving", "Saving...") : t("common.save", "Save")}
                   </Button>
                 </div>
               </form>
@@ -944,25 +611,22 @@ export function SettingsManagement() {
     </div>
   );
 }
-function SettingsSkeleton() {
+
+type ToggleFieldProps = {
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+};
+
+function ToggleField({ label, description, checked, onChange }: ToggleFieldProps) {
   return (
-    <div className="p-6 space-y-6">
-      <div className="space-y-2">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-4 w-64" />
+    <div className="flex items-center justify-between border rounded-lg p-3">
+      <div>
+        <p className="font-medium">{label}</p>
+        {description && <p className="text-sm text-muted-foreground">{description}</p>}
       </div>
-      {[...new Array(3)].map((_, index) => (
-        <Card key={index}>
-          <CardHeader>
-            <Skeleton className="h-5 w-40" />
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {[...new Array(3)].map((__, idx) => (
-              <Skeleton key={idx} className="h-10 w-full" />
-            ))}
-          </CardContent>
-        </Card>
-      ))}
+      <Switch checked={checked} onCheckedChange={onChange} />
     </div>
   );
 }

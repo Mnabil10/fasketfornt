@@ -1,573 +1,413 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { getOrder, updateOrderStatus, OrderSummary } from "../../../services/orders.service";
-import { fmtEGP } from "../../../lib/money";
-import { toast } from "sonner";
-import { useOrdersAdmin, ORDERS_QUERY_KEY } from "../../../hooks/api/useOrdersAdmin";
-import { getApiErrorMessage } from "../../../lib/errors";
-import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
-import { EmptyState } from "../../admin/common/EmptyState";
-import { ErrorState } from "../../admin/common/ErrorState";
-
-// shadcn ui
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
+import { Badge } from "../../ui/badge";
 import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";
-import { Badge } from "../../ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../ui/table";
-import { Separator } from "../../ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/dialog";
+import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
+import { EmptyState } from "../common/EmptyState";
+import { ErrorState } from "../common/ErrorState";
+import { Search, Truck, Filter, RefreshCcw, Receipt } from "lucide-react";
+import dayjs from "dayjs";
+import { toast } from "sonner";
+import { ORDERS_QUERY_KEY, useOrdersAdmin } from "../../../hooks/api/useOrdersAdmin";
+import { useDeliveryDrivers } from "../../../hooks/api/useDeliveryDrivers";
+import { useAssignDriver } from "../../../hooks/api/useAssignDriver";
+import { useOrderReceipt } from "../../../hooks/api/useOrderReceipt";
+import { getOrder, updateOrderStatus } from "../../../services/orders.service";
+import { getAdminErrorMessage } from "../../../lib/errors";
+import type { OrderDetail, OrderFilters, OrderStatus } from "../../../types/order";
+import { fmtEGP } from "../../../lib/money";
+import { useDebounce } from "../../../hooks/useDebounce";
+import { OrderReceiptView } from "./OrderReceiptView";
 
-// icons
-import {
-  Search,
-  Eye,
-  Package,
-  CreditCard,
-  Clock,
-  CheckCircle,
-  Truck,
-  XCircle,
-  Calendar,
-  DollarSign,
-  ShoppingBag,
-  Users,
-  MapPin,
-} from "lucide-react";
+type OrdersManagementProps = {
+  initialOrderId?: string | null;
+};
 
-const ALL = "ALL"; // Radix: avoid empty-string Select values
-
-export function OrdersManagement(props?: any) {
+export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-
-  // === state (same logic & shapes as your old page)
-  type OrderStatus = OrderSummary["status"];
-  type OrderListItem = OrderSummary;
-  type OrderDetail = any;
-
-  const [filters, setFilters] = useState({
-    status: "" as "" | OrderStatus,
-    from: "",
-    to: "",
-    customer: "",
-    page: 1,
-  });
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialOrderId ?? null);
+  const [detailOpen, setDetailOpen] = useState<boolean>(Boolean(initialOrderId));
+  const [page, setPage] = useState(1);
   const pageSize = 20;
-  const [selected, setSelected] = useState<OrderDetail | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
 
-  const apiFilters = useMemo(
+  const [filters, setFilters] = useState<OrderFilters>({
+    status: undefined,
+    from: undefined,
+    to: undefined,
+    customer: "",
+    driverId: undefined,
+    page,
+    pageSize,
+  });
+
+  const debouncedCustomer = useDebounce(filters.customer || "", 300);
+  const mergedFilters = useMemo(
     () => ({
-      status: filters.status || undefined,
-      from: filters.from || undefined,
-      to: filters.to || undefined,
-      customer: filters.customer.trim() || undefined,
-      page: filters.page,
+      ...filters,
+      page,
       pageSize,
+      customer: debouncedCustomer || undefined,
     }),
-    [filters, pageSize]
+    [filters, debouncedCustomer, page, pageSize]
   );
 
-  const ordersQuery = useOrdersAdmin(apiFilters);
-  const items = (ordersQuery.data?.items as OrderListItem[]) || [];
+  const ordersQuery = useOrdersAdmin(mergedFilters);
+  const items = ordersQuery.data?.items || [];
   const total = ordersQuery.data?.total || 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const locale = "ar-EG"; // same as old page
 
-  // status badge UI
-  const statusMeta = useMemo(
-    () => ({
-      PENDING: { label: t("orders.statuses.PENDING"), color: "bg-yellow-100 text-yellow-700", icon: Clock },
-      PROCESSING: { label: t("orders.statuses.PROCESSING"), color: "bg-blue-100 text-blue-700", icon: Package },
-      OUT_FOR_DELIVERY: {
-        label: t("orders.statuses.OUT_FOR_DELIVERY"),
-        color: "bg-purple-100 text-purple-700",
-        icon: Truck,
-      },
-      DELIVERED: { label: t("orders.statuses.DELIVERED"), color: "bg-green-100 text-green-700", icon: CheckCircle },
-      CANCELED: { label: t("orders.statuses.CANCELED"), color: "bg-red-100 text-red-700", icon: XCircle },
-    }),
-    [t]
-  );
+  const driversQuery = useDeliveryDrivers({ isActive: true, page: 1, pageSize: 100 });
 
-
-  async function openDetail(id: string) {
-    const detail = await getOrder(id);
-    setSelected(detail);
-    setDetailOpen(true);
-  }
-
-  // Deep-link from notifications: open a specific order
-  useEffect(() => {
-    const id = props?.adminState?.selectedOrder;
-    if (!id) return;
-    (async () => {
-      try { await openDetail(String(id)); } catch {}
-      finally { props?.updateAdminState?.({ selectedOrder: null }); }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props?.adminState?.selectedOrder]);
-
-  const updateStatusMutation = useMutation({
-    mutationFn: ({ id, to }: { id: string; to: OrderStatus }) => updateOrderStatus(id, { to }),
-    onSuccess: async (_data, variables) => {
-      toast.success(t("orders.updated") || "Order updated");
-      await queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
-      try {
-        await openDetail(variables.id);
-      } catch {
-        // swallow detail reload errors
-      }
-    },
-    onError: (error) => toast.error(getApiErrorMessage(error, t("orders.updateFailed", "Unable to update order"))),
+  const detailQuery = useQuery({
+    queryKey: [...ORDERS_QUERY_KEY, "detail", selectedOrderId],
+    queryFn: () => (selectedOrderId ? getOrder(selectedOrderId) : null),
+    enabled: Boolean(selectedOrderId),
   });
 
-  async function changeStatus(to: OrderStatus) {
-    if (!selected) return;
-    await updateStatusMutation.mutateAsync({ id: selected.id, to });
-  }
+  const receiptQuery = useOrderReceipt(selectedOrderId || undefined, { enabled: detailOpen && Boolean(selectedOrderId) });
 
-  // quick stats (optional pretty header, derived from current page)
-  const stats = useMemo(() => {
-    const totalOnPage = items.length;
-    const count = (s: OrderStatus) => items.filter((o) => o.status === s).length;
-    const revenueCents = items.reduce((sum, o) => sum + o.totalCents, 0);
-    return {
-      totalOnPage,
-      pending: count("PENDING"),
-      processing: count("PROCESSING"),
-      delivered: count("DELIVERED"),
-      revenueCents,
+  const assignDriverMutation = useAssignDriver(selectedOrderId || "");
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ id, to }: { id: string; to: OrderStatus }) => updateOrderStatus(id, { to }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY }),
+  });
+
+  useEffect(() => {
+    if (initialOrderId) {
+      setSelectedOrderId(initialOrderId);
+      setDetailOpen(true);
+    }
+  }, [initialOrderId]);
+
+  const parentRef = useRef<HTMLDivElement | null>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 72,
+    overscan: 6,
+  });
+
+  const statusOptions: OrderStatus[] = ["PENDING", "PROCESSING", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELED"];
+
+  const statusBadge = (status: OrderStatus) => {
+    const map: Record<OrderStatus, { color: string; label: string }> = {
+      PENDING: { color: "bg-yellow-100 text-yellow-800", label: t("orders.statuses.PENDING", "Pending") },
+      PROCESSING: { color: "bg-blue-100 text-blue-800", label: t("orders.statuses.PROCESSING", "Processing") },
+      OUT_FOR_DELIVERY: {
+        color: "bg-purple-100 text-purple-800",
+        label: t("orders.statuses.OUT_FOR_DELIVERY", "Out for delivery"),
+      },
+      DELIVERED: { color: "bg-green-100 text-green-800", label: t("orders.statuses.DELIVERED", "Delivered") },
+      CANCELED: { color: "bg-red-100 text-red-800", label: t("orders.statuses.CANCELED", "Canceled") },
     };
-  }, [items]);
+    return map[status];
+  };
+
+  const openDetail = (orderId: string) => {
+    setSelectedOrderId(orderId);
+    setDetailOpen(true);
+  };
+
+  const onAssignDriver = async (driverId: string) => {
+    if (!selectedOrderId || !driverId) return;
+    try {
+      await assignDriverMutation.mutateAsync({ driverId });
+      toast.success(t("orders.driverAssigned", "Driver assigned"));
+      queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
+      detailQuery.refetch();
+    } catch (error) {
+      toast.error(getAdminErrorMessage(error, t));
+    }
+  };
+
+  const onStatusChange = async (to: OrderStatus) => {
+    if (!selectedOrderId) return;
+    try {
+      await updateStatusMutation.mutateAsync({ id: selectedOrderId, to });
+      toast.success(t("orders.updated", "Order updated"));
+      detailQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
+    } catch (error) {
+      toast.error(getAdminErrorMessage(error, t));
+    }
+  };
+
+  const resetFilters = () => {
+    setFilters({
+      status: undefined,
+      from: undefined,
+      to: undefined,
+      customer: "",
+      driverId: undefined,
+      page,
+      pageSize,
+    });
+    setPage(1);
+  };
 
   return (
-    <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="p-4 lg:p-6 space-y-4">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="font-poppins text-2xl lg:text-3xl text-gray-900" style={{ fontWeight: 700 }}>
-            {t("orders.title") || "Orders Management"}
-          </h1>
-          <p className="text-gray-600 mt-1 text-sm lg:text-base">
-            {t("orders.subtitle") || "Track and manage customer orders"}
-          </p>
+          <h1 className="text-2xl font-semibold">{t("orders.title", "Orders")}</h1>
+          <p className="text-muted-foreground">{t("orders.subtitle", "Track and manage customer orders")}</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => ordersQuery.refetch()}>
+            <RefreshCcw className="w-4 h-4 mr-2" />
+            {t("common.refresh", "Refresh")}
+          </Button>
         </div>
       </div>
 
-      {/* Stats (derived from current page; has no effect on logic) */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 lg:gap-4">
-        <Card>
-          <CardContent className="p-3 lg:p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs lg:text-sm text-gray-600">{t("orders.totalOnPage") || "Orders (this page)"}</p>
-                <p className="text-xl lg:text-2xl font-bold text-gray-900">{stats.totalOnPage}</p>
-              </div>
-              <ShoppingBag className="w-6 h-6 lg:w-8 lg:h-8 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 lg:p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs lg:text-sm text-gray-600">{t("orders.statuses.PENDING")}</p>
-                <p className="text-xl lg:text-2xl font-bold text-yellow-600">{stats.pending}</p>
-              </div>
-              <Clock className="w-6 h-6 lg:w-8 lg:h-8 text-yellow-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 lg:p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs lg:text-sm text-gray-600">{t("orders.statuses.PROCESSING")}</p>
-                <p className="text-xl lg:text-2xl font-bold text-blue-600">{stats.processing}</p>
-              </div>
-              <Package className="w-6 h-6 lg:w-8 lg:h-8 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 lg:p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs lg:text-sm text-gray-600">{t("orders.statuses.DELIVERED")}</p>
-                <p className="text-xl lg:text-2xl font-bold text-green-600">{stats.delivered}</p>
-              </div>
-              <CheckCircle className="w-8 h-8 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">{t("orders.revenueOnPage") || "Revenue (this page)"}</p>
-                <p className="text-2xl font-bold text-primary">{fmtEGP(stats.revenueCents)}</p>
-              </div>
-              <DollarSign className="w-8 h-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters (same fields/behavior as old page) */}
       <Card>
-        <CardContent className="p-3 lg:p-4">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 lg:gap-4">
-            <div className="relative flex-1 min-w-0">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="w-4 h-4" />
+            {t("common.filters", "Filters")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder={t("filters.searchPlaceholder") || "Search by name/phone/order id"}
+                className="pl-8"
+                placeholder={t("orders.searchCustomer", "Search by customer or code")}
                 value={filters.customer}
-                onChange={(e) => setFilters((f) => ({ ...f, customer: e.target.value, page: 1 }))}
-                className="pl-10"
+                onChange={(e) => {
+                  setPage(1);
+                  setFilters((prev) => ({ ...prev, customer: e.target.value }));
+                }}
               />
             </div>
-
             <Select
-              value={filters.status || ALL}
-              onValueChange={(v) =>
-                setFilters((f) => ({
-                  ...f,
-                  status: v === ALL ? "" : (v as OrderStatus),
-                  page: 1,
-                }))
-              }
+              value={filters.status || ""}
+              onValueChange={(val) => {
+                setPage(1);
+                setFilters((prev) => ({ ...prev, status: (val as OrderStatus) || undefined }));
+              }}
             >
-              <SelectTrigger className="w-full sm:w-56">
-                <SelectValue placeholder={t("orders.status")} />
+              <SelectTrigger>
+                <SelectValue placeholder={t("orders.status_filter", "Status")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL}>{t("common.all") || "All"}</SelectItem>
-                <SelectItem value="PENDING">{t("orders.statuses.PENDING")}</SelectItem>
-                <SelectItem value="PROCESSING">{t("orders.statuses.PROCESSING")}</SelectItem>
-                <SelectItem value="OUT_FOR_DELIVERY">{t("orders.statuses.OUT_FOR_DELIVERY")}</SelectItem>
-                <SelectItem value="DELIVERED">{t("orders.statuses.DELIVERED")}</SelectItem>
-                <SelectItem value="CANCELED">{t("orders.statuses.CANCELED")}</SelectItem>
+                <SelectItem value="">{t("common.all", "All")}</SelectItem>
+                {statusOptions.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {statusBadge(s).label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-
-            <div className="flex gap-2 items-center">
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  type="date"
-                  value={filters.from}
-                  onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value, page: 1 }))}
-                  className="pl-10 w-44"
-                />
-              </div>
-              <span className="text-gray-500">—</span>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  type="date"
-                  value={filters.to}
-                  onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value, page: 1 }))}
-                  className="pl-10 w-44"
-                />
-              </div>
-            </div>
-
-            <Button onClick={() => ordersQuery.refetch()} disabled={ordersQuery.isFetching}>
-              {t("app.actions.apply")}
+            <Select
+              value={filters.driverId || ""}
+              onValueChange={(val) => {
+                setPage(1);
+                setFilters((prev) => ({ ...prev, driverId: val || undefined }));
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={t("orders.driver_filter", "Driver")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">{t("common.all", "All")}</SelectItem>
+                {(driversQuery.data?.items || []).map((driver) => (
+                  <SelectItem key={driver.id} value={driver.id}>
+                    {driver.fullName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" onClick={resetFilters}>
+              {t("common.resetFilters", "Reset filters")}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Table (same columns/values as old page) */}
       <Card>
-        <CardHeader>
-          <CardTitle>{t("orders.listTitle", { count: items.length }) || `Orders (${items.length})`}</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0 lg:p-6">
-          <div className="overflow-x-auto">
-            {ordersQuery.isLoading ? (
-              <AdminTableSkeleton rows={4} columns={6} />
-            ) : ordersQuery.isError ? (
-              <ErrorState message={t("orders.loadError") || "Unable to load orders"} onRetry={() => ordersQuery.refetch()} />
-            ) : items.length === 0 ? (
-              <EmptyState
-                title={t("orders.emptyTitle") || "No orders found"}
-                description={t("orders.emptyDescription") || "Adjust filters or try again later."}
-                action={
-                  <Button size="sm" variant="outline" onClick={() => ordersQuery.refetch()}>
-                    {t("app.actions.retry")}
+        <CardContent className="p-0">
+          <div className="grid grid-cols-[1.2fr,1fr,1fr,1fr,0.8fr,0.8fr] text-xs font-medium text-muted-foreground px-4 py-2 border-b">
+            <span>{t("orders.code", "Code")}</span>
+            <span>{t("orders.customer", "Customer")}</span>
+            <span>{t("orders.createdAt", "Created")}</span>
+            <span>{t("orders.amount", "Amount")}</span>
+            <span>{t("orders.driver", "Driver")}</span>
+            <span className="text-right">{t("orders.status", "Status")}</span>
+          </div>
+          {ordersQuery.isLoading ? (
+            <div className="p-4">
+              <AdminTableSkeleton rows={5} columns={6} />
+            </div>
+          ) : ordersQuery.isError ? (
+            <ErrorState message={t("orders.loadError", "Unable to load orders")} onRetry={() => ordersQuery.refetch()} />
+          ) : items.length === 0 ? (
+            <EmptyState
+              title={t("orders.empty", "No orders found")}
+              description={t("orders.emptyDesc", "Try changing the filters")}
+            />
+          ) : (
+            <>
+              <div ref={parentRef} style={{ height: "60vh", overflow: "auto", position: "relative" }}>
+                <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
+                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const order = items[virtualRow.index];
+                    const meta = statusBadge(order.status);
+                    return (
+                      <div
+                        key={order.id}
+                        className="grid grid-cols-[1.2fr,1fr,1fr,1fr,0.8fr,0.8fr] px-4 py-3 border-b hover:bg-muted/60 cursor-pointer"
+                        style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${virtualRow.start}px)` }}
+                        onClick={() => openDetail(order.id)}
+                      >
+                        <div className="font-semibold">{order.code || order.id}</div>
+                        <div className="space-y-0.5">
+                          <p className="font-medium">{order.customer?.name}</p>
+                          <p className="text-xs text-muted-foreground">{order.customer?.phone}</p>
+                        </div>
+                        <div className="text-sm text-muted-foreground">{dayjs(order.createdAt).format("DD MMM HH:mm")}</div>
+                        <div className="font-semibold">{fmtEGP(order.totalCents)}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {order.driver?.fullName ? (
+                            <span className="inline-flex items-center gap-1">
+                              <Truck className="w-4 h-4" />
+                              {order.driver.fullName}
+                            </span>
+                          ) : (
+                            "-"
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <Badge className={meta.color}>{meta.label}</Badge>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
+                <div>
+                  {t("common.pagination", { defaultValue: "Page {{page}} of {{count}}", page, count: pageCount })}
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                    {t("common.prev", "Prev")}
                   </Button>
-                }
-              />
-            ) : (
-              <>
-                <Table className="min-w-[900px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("dashboard.orderId")}</TableHead>
-                      <TableHead>{t("dashboard.customer")}</TableHead>
-                      <TableHead>{t("dashboard.total")}</TableHead>
-                      <TableHead>{t("dashboard.createdAt")}</TableHead>
-                      <TableHead>{t("dashboard.status")}</TableHead>
-                      <TableHead className="text-right">{t("common.actions") || ""}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.map((o) => {
-                      const meta = statusMeta[o.status] ?? { label: o.status, color: "", icon: Clock };
-                      const Icon = meta.icon;
-                      return (
-                        <TableRow key={o.id}>
-                          <TableCell>
-                            <div className="font-mono">{o.id}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium">{o.user?.name || o.user?.phone || "-"}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{fmtEGP(o.totalCents)}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm">{new Date(o.createdAt).toLocaleString(locale)}</div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={meta.color}>
-                              <Icon className="w-3 h-3 mr-1" />
-                              {meta.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button variant="ghost" size="sm" onClick={() => openDetail(o.id)}>
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-
-                <div className="flex items-center gap-2 justify-end p-4">
-                  <Button
-                    variant="outline"
-                    disabled={filters.page === 1}
-                    onClick={() => setFilters((f) => ({ ...f, page: f.page - 1 }))}
-                  >
-                    {t("app.actions.prev")}
-                  </Button>
-                  <span className="text-sm">
-                    {t("app.table.page")} {filters.page} {t("app.table.of")} {pageCount}
-                  </span>
-                  <Button
-                    variant="outline"
-                    disabled={filters.page >= pageCount}
-                    onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}
-                  >
-                    {t("app.actions.next")}
+                  <Button size="sm" variant="outline" disabled={page >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>
+                    {t("common.next", "Next")}
                   </Button>
                 </div>
-              </>
-            )}
-          </div>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
-      {/* Details (Dialog instead of raw overlay; same data & actions) */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto" aria-describedby={undefined}>
+        <DialogContent className="max-w-5xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>
-                {t("orders.detail")} — {selected?.id}
-              </span>
-              {selected && (
-                <Select value={selected.status} onValueChange={(v) => changeStatus(v as OrderStatus)}>
-                  <SelectTrigger className="w-56">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PENDING">{t("orders.statuses.PENDING")}</SelectItem>
-                    <SelectItem value="PROCESSING">{t("orders.statuses.PROCESSING")}</SelectItem>
-                    <SelectItem value="OUT_FOR_DELIVERY">{t("orders.statuses.OUT_FOR_DELIVERY")}</SelectItem>
-                    <SelectItem value="DELIVERED">{t("orders.statuses.DELIVERED")}</SelectItem>
-                    <SelectItem value="CANCELED">{t("orders.statuses.CANCELED")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            </DialogTitle>
+            <DialogTitle>{t("orders.detail", "Order details")}</DialogTitle>
           </DialogHeader>
-
-          {selected && (
-            <div className="space-y-6">
-              {/* Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {detailQuery.isLoading ? (
+            <AdminTableSkeleton rows={4} columns={3} />
+          ) : detailQuery.isError ? (
+            <ErrorState message={t("orders.detailError", "Unable to load order details")} onRetry={() => detailQuery.refetch()} />
+          ) : !detailQuery.data ? (
+            <EmptyState title={t("orders.no_detail", "No details")} />
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Users className="w-4 h-4 text-gray-600" />
-                      <h3 className="font-medium">{t("orders.customer")}</h3>
+                  <CardHeader>
+                    <CardTitle className="text-sm">{t("orders.summary", "Summary")}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>{t("orders.code", "Code")}</span>
+                      <span className="font-semibold">{detailQuery.data.code || detailQuery.data.id}</span>
                     </div>
-                    <p className="font-medium">{selected.user?.name || "-"}</p>
-                    <p className="text-sm text-gray-600">{selected.user?.phone || "-"}</p>
+                    <div className="flex justify-between">
+                      <span>{t("orders.createdAt", "Created")}</span>
+                      <span>{dayjs(detailQuery.data.createdAt).format("DD MMM YYYY HH:mm")}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>{t("orders.customer", "Customer")}</span>
+                      <span className="font-semibold">{detailQuery.data.customer?.name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>{t("orders.phone", "Phone")}</span>
+                      <span>{detailQuery.data.customer?.phone}</span>
+                    </div>
                   </CardContent>
                 </Card>
 
                 <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <MapPin className="w-4 h-4 text-gray-600" />
-                      <h3 className="font-medium">{t("orders.address")}</h3>
-                    </div>
-                    <p className="text-sm">
-                      {[selected.address?.label, selected.address?.city, selected.address?.street]
-                        .filter(Boolean)
-                        .join(" — ")}
-                    </p>
+                  <CardHeader>
+                    <CardTitle className="text-sm">{t("orders.status", "Status")}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <Select value={detailQuery.data.status} onValueChange={(val) => onStatusChange(val as OrderStatus)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {statusOptions.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {statusBadge(s).label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </CardContent>
                 </Card>
 
                 <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <CreditCard className="w-4 h-4 text-gray-600" />
-                      <h3 className="font-medium">{t("orders.payment") || "Payment"}</h3>
-                    </div>
-                    <p className="text-sm">
-                      {t("orders.subtotal")}: {fmtEGP(selected.subtotalCents)}
-                    </p>
-                    <p className="text-sm">
-                      {t("orders.shipping")}: {fmtEGP(selected.shippingFeeCents)}
-                    </p>
-                    {selected.couponCode && (
-                      <p className="text-sm">
-                        {t("orders.coupon", "Coupon")}:
-                        <span className="ml-1 font-mono">{selected.couponCode}</span>
-                      </p>
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle className="text-sm">{t("orders.assignDriver", "Assign driver")}</CardTitle>
+                    <Truck className="w-4 h-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <Select value={detailQuery.data.driver?.id || ""} onValueChange={(val) => onAssignDriver(val)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t("orders.selectDriver", "Select driver")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">{t("common.none", "None")}</SelectItem>
+                        {(driversQuery.data?.items || []).map((driver) => (
+                          <SelectItem key={driver.id} value={driver.id}>
+                            {driver.fullName} - {driver.vehicle?.type || ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {detailQuery.data.driver ? (
+                      <div className="text-sm text-muted-foreground">
+                        {t("orders.currentDriver", "Current:")} {detailQuery.data.driver.fullName} - {detailQuery.data.driver.phone}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">{t("orders.noDriver", "No driver assigned")}</div>
                     )}
-                    {selected.cartId && (
-                      <p className="text-sm">
-                        {t("orders.cartId", "Cart ID")}:
-                        <span className="ml-1 font-mono">{selected.cartId}</span>
-                      </p>
-                    )}
-                    <p className="text-sm font-semibold">
-                      {t("orders.total")}: {fmtEGP(selected.totalCents)}
-                    </p>
                   </CardContent>
                 </Card>
               </div>
 
-              {/* Items */}
               <Card>
-                <CardHeader>
-                  <CardTitle>{t("orders.items")}</CardTitle>
+                <CardHeader className="flex items-center justify-between">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Receipt className="w-4 h-4" />
+                    {t("orders.receipt", "Receipt")}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
-                    {selected.items.map((it: any) => (
-                      <div
-                        key={it.productId}
-                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                      >
-                        <div>
-                          <p className="font-medium">{it.productNameSnapshot}</p>
-                          <p className="text-sm text-gray-600">
-                            {t("orders.qty")}: {it.qty}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-medium">{fmtEGP(it.priceSnapshotCents)}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <Separator className="my-4" />
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>{t("orders.subtotal")}</span>
-                      <span>{fmtEGP(selected.subtotalCents)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>{t("orders.shipping")}</span>
-                      <span>{fmtEGP(selected.shippingFeeCents)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>{t("orders.discount")}</span>
-                      <span>{fmtEGP(selected.discountCents)}</span>
-                    </div>
-                    <div className="flex justify-between font-medium text-lg pt-2 border-t">
-                      <span>{t("orders.total")}</span>
-                      <span>{fmtEGP(selected.totalCents)}</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Notes */}
-              {selected.notes && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{t("orders.notes", "Notes")}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="whitespace-pre-wrap text-sm text-gray-800">{selected.notes}</p>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* History */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t("orders.history")}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {selected.statusHistory.map((h: any, idx: number) => {
-                      const from = t(`orders.statuses.${h.from}`);
-                      const to = t(`orders.statuses.${h.to}`);
-                      return (
-                        <div key={idx} className="flex items-start gap-3">
-                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                            <div className="w-3 h-3 rounded-full bg-primary" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium">
-                              {from} → {to}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              {new Date(h.createdAt).toLocaleString(locale)}
-                            </p>
-                            {h.note && <p className="text-sm mt-1">{t("orders.note")}: {h.note}</p>}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Quick status actions (same call) */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t("orders.updateStatus")}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {(["PENDING", "PROCESSING", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELED"] as OrderStatus[]).map(
-                      (s) => (
-                        <Button key={s} variant="outline" onClick={() => changeStatus(s)}>
-                          {t(`orders.statuses.${s}`)}
-                        </Button>
-                      )
-                    )}
-                  </div>
+                  <OrderReceiptView receipt={receiptQuery.data || null} isLoading={receiptQuery.isLoading} />
                 </CardContent>
               </Card>
             </div>

@@ -16,7 +16,7 @@ import { Separator } from "../../ui/separator";
 import { toast } from "sonner";
 import { useAuth } from "../../../auth/AuthProvider";
 import { useCustomersAdmin, CUSTOMERS_QUERY_KEY } from "../../../hooks/api/useCustomersAdmin";
-import { getApiErrorMessage } from "../../../lib/errors";
+import { getAdminErrorMessage } from "../../../lib/errors";
 import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
 import { EmptyState } from "../../admin/common/EmptyState";
 import { ErrorState } from "../../admin/common/ErrorState";
@@ -76,7 +76,7 @@ export function CustomersManagement() {
       }
     },
     onError: (error) =>
-      toast.error(getApiErrorMessage(error, t("customers.roleUpdateFailed", "Unable to update role"))),
+      toast.error(getAdminErrorMessage(error, t, t("customers.roleUpdateFailed", "Unable to update role"))),
   });
 
   const resetPasswordMutation = useMutation({
@@ -87,7 +87,7 @@ export function CustomersManagement() {
       setPwd("");
       setPwd2("");
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, t("customers.resetFailed", "Unable to reset password"))),
+    onError: (error) => toast.error(getAdminErrorMessage(error, t, t("customers.resetFailed", "Unable to reset password"))),
   });
 
   async function open(id: string) {

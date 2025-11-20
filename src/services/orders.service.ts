@@ -1,34 +1,44 @@
 import { api } from "../lib/api";
 import { buildQueryParams } from "../lib/query";
+import type {
+  OrderDetail,
+  OrderFilters,
+  OrderStatus,
+  OrderStatusPayload,
+  OrdersPaged,
+} from "../types/order";
+import type { DriverAssignmentPayload } from "../types/delivery";
+import type { OrderReceipt } from "../types/receipt";
 
-export type OrderSummary = {
-  id: string;
-  totalCents: number;
-  status: "PENDING" | "PROCESSING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "CANCELED";
-  createdAt: string;
-  user: { id: string; name: string; phone: string };
-};
-export type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
-
-export async function listOrders(params?: {
-  status?: OrderSummary["status"];
-  from?: string;
-  to?: string;
-  customer?: string;
-  minTotalCents?: number;
-  maxTotalCents?: number;
-  page?: number;
-  pageSize?: number;
-}) {
+export async function listOrders(params?: OrderFilters) {
   const query = buildQueryParams(params);
-  const { data } = await api.get<Paged<OrderSummary>>("/api/v1/admin/orders", { params: query });
+  const { data } = await api.get<OrdersPaged>("/admin/orders", { params: query });
+  const items = (data.items || []).map((order: any) => ({
+    ...order,
+    customer: order.customer || order.user,
+  }));
+  return { ...data, items };
+}
+
+export async function getOrder(id: string) {
+  const { data } = await api.get<OrderDetail>(`/admin/orders/${id}`);
+  return {
+    ...data,
+    customer: (data as any).customer || (data as any).user,
+  };
+}
+
+export async function updateOrderStatus(id: string, body: OrderStatusPayload) {
+  const { data } = await api.patch<{ ok: true }>(`/admin/orders/${id}/status`, body);
   return data;
 }
-export async function getOrder(id: string) {
-  const { data } = await api.get(`/api/v1/admin/orders/${id}`);
-  return data as any; // full detail per your spec
+
+export async function assignDriverToOrder(id: string, payload: DriverAssignmentPayload) {
+  const { data } = await api.patch<OrderDetail>(`/admin/orders/${id}/assign-driver`, payload);
+  return data;
 }
-export async function updateOrderStatus(id: string, body: { to: OrderSummary["status"]; note?: string; actorId?: string }) {
-  const { data } = await api.patch<{ ok: true }>(`/api/v1/admin/orders/${id}/status`, body);
+
+export async function getOrderReceipt(orderId: string) {
+  const { data } = await api.get<OrderReceipt>(`/admin/orders/${orderId}/receipt`);
   return data;
 }

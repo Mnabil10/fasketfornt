@@ -52,6 +52,22 @@
     "inactive": "غير مفعل",
     "saving": "جارٍ الحفظ..."
   },
+  "errors": {
+    "DEFAULT": "حدث خطأ ما. يرجى المحاولة مرة أخرى.",
+    "ORDER_NOT_FOUND": "لم يتم العثور على الطلب.",
+    "ADDRESS_INVALID_ZONE": "العنوان خارج نطاق مناطق التوصيل.",
+    "DRIVER_NOT_FOUND": "السائق غير موجود.",
+    "DRIVER_INACTIVE": "السائق غير نشط.",
+    "DRIVER_ALREADY_ASSIGNED": "تم تعيين السائق على طلب آخر.",
+    "LOYALTY_DISABLED": "برنامج الولاء غير مفعل.",
+    "LOYALTY_NOT_ENOUGH_POINTS": "النقاط المتاحة غير كافية.",
+    "LOYALTY_RULE_VIOLATION": "هذا الإجراء يخالف قواعد برنامج الولاء.",
+    "VALIDATION_FAILED": "بعض الحقول غير صحيحة. يرجى المراجعة.",
+    "RATE_LIMITED": "طلبات عديدة جدًا، يرجى المحاولة لاحقًا.",
+    "UNAUTHORIZED": "ليست لديك صلاحية لتنفيذ هذا الإجراء.",
+    "SETTING_NOT_CONFIGURED": "??? ??????? ??? ???? ???.",
+    "INTERNAL_ERROR": "??? ?????? ???? ???????? ??????."
+  },
   "nav": {
     "dashboard": "لوحة التحكم",
     "categories": "التصنيفات",
@@ -263,7 +279,6 @@
       "stock": "المخزون",
       "asc": "تصاعدي",
       "desc": "تنازلي"
-
     },
     "stockFilters": {
       "in": "متوفر",
@@ -495,10 +510,9 @@
     "invalid_identifier": "أدخل رقم هاتف أو بريداً إلكترونياً صالحاً",
     "sessionExpired": "انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى"
   },
-"confirm_password": "تأكيد كلمة المرور",
-"newPassword": "كلمة مرور جديدة",
-"passwordMismatch": "كلمتا المرور غير متطابقتين",
-"passwordTooShort": "يجب أن تتكون كلمة المرور من 6 أحرف على الأقل",
-"resetPassword": "إعادة تعيين كلمة المرور"
-
+  "confirm_password": "تأكيد كلمة المرور",
+  "newPassword": "كلمة مرور جديدة",
+  "passwordMismatch": "كلمتا المرور غير متطابقتين",
+  "passwordTooShort": "يجب أن تتكون كلمة المرور من 6 أحرف على الأقل",
+  "resetPassword": "إعادة تعيين كلمة المرور"
 }

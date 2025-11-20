@@ -49,7 +49,7 @@ import { toast } from "sonner";
 import { useAuth } from "../../../auth/AuthProvider";
 import { useDebounce } from "../../../hooks/useDebounce";
 import { useCategoriesAdmin, CATEGORIES_QUERY_KEY } from "../../../hooks/api/useCategoriesAdmin";
-import { getApiErrorMessage } from "../../../lib/errors";
+import { getAdminErrorMessage } from "../../../lib/errors";
 import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
 import { EmptyState } from "../../admin/common/EmptyState";
 import { ErrorState } from "../../admin/common/ErrorState";
@@ -195,7 +195,7 @@ export function CategoriesManagement() {
       queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
       setDialogState(null);
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, t("app.notifications.error"))),
+    onError: (error) => toast.error(getAdminErrorMessage(error, t, t("app.notifications.error"))),
   });
 
   const deleteMutation = useMutation({
@@ -204,13 +204,15 @@ export function CategoriesManagement() {
       toast.success(t("categories.deleted", "Category deleted"));
       queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, t("app.notifications.error"))),
+    onError: (error) => toast.error(getAdminErrorMessage(error, t, t("app.notifications.error"))),
   });
 
   const reorderMutation = useMutation({
     mutationFn: (items: ReorderItem[]) => reorderCategories(items),
     onError: (error) => {
-      toast.error(getApiErrorMessage(error, t("categories.reorder_error", "Unable to reorder categories")));
+      toast.error(
+        getAdminErrorMessage(error, t, t("categories.reorder_error", "Unable to reorder categories"))
+      );
       // revert visual order
       if (categoryItems.length) setRows(categoryItems);
     },
