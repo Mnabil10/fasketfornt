@@ -34,8 +34,11 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   const queryClient = useQueryClient();
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialOrderId ?? null);
   const [detailOpen, setDetailOpen] = useState<boolean>(Boolean(initialOrderId));
+  const [receiptOpen, setReceiptOpen] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 20;
+  const [driverSearch, setDriverSearch] = useState("");
+  const [selectedDriverIdToAssign, setSelectedDriverIdToAssign] = useState<string>("");
 
   const [filters, setFilters] = useState<OrderFilters>({
     status: undefined,
@@ -48,6 +51,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   });
 
   const debouncedCustomer = useDebounce(filters.customer || "", 300);
+  const debouncedDriverSearch = useDebounce(driverSearch, 300);
   const mergedFilters = useMemo(
     () => ({
       ...filters,
@@ -63,7 +67,12 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   const total = ordersQuery.data?.total || 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
-  const driversQuery = useDeliveryDrivers({ isActive: true, page: 1, pageSize: 100 });
+  const driverFilters = useMemo(
+    () => ({ isActive: true, search: debouncedDriverSearch || undefined, page: 1, pageSize: 100 }),
+    [debouncedDriverSearch]
+  );
+
+  const driversQuery = useDeliveryDrivers(driverFilters, { enabled: detailOpen });
 
   const detailQuery = useQuery({
     queryKey: [...ORDERS_QUERY_KEY, "detail", selectedOrderId],
@@ -71,7 +80,9 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     enabled: Boolean(selectedOrderId),
   });
 
-  const receiptQuery = useOrderReceipt(selectedOrderId || undefined, { enabled: detailOpen && Boolean(selectedOrderId) });
+  const receiptQuery = useOrderReceipt(selectedOrderId || undefined, {
+    enabled: receiptOpen && detailOpen && Boolean(selectedOrderId),
+  });
 
   const assignDriverMutation = useAssignDriver(selectedOrderId || "");
   const updateStatusMutation = useMutation({
@@ -86,6 +97,24 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     }
   }, [initialOrderId]);
 
+  useEffect(() => {
+    if (detailQuery.data?.driver?.id) {
+      setSelectedDriverIdToAssign(detailQuery.data.driver.id);
+    } else {
+      setSelectedDriverIdToAssign("");
+    }
+  }, [detailQuery.data?.driver?.id]);
+
+  useEffect(() => {
+    if (!detailOpen) {
+      setReceiptOpen(false);
+    }
+  }, [detailOpen]);
+
+  useEffect(() => {
+    setReceiptOpen(false);
+  }, [selectedOrderId]);
+
   const parentRef = useRef<HTMLDivElement | null>(null);
   const rowVirtualizer = useVirtualizer({
     count: items.length,
@@ -95,6 +124,9 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   });
 
   const statusOptions: OrderStatus[] = ["PENDING", "PROCESSING", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELED"];
+  const assignNotAllowed = detailQuery.data?.status
+    ? ["DELIVERED", "CANCELED"].includes(detailQuery.data.status)
+    : false;
 
   const statusBadge = (status: OrderStatus) => {
     const map: Record<OrderStatus, { color: string; label: string }> = {
@@ -115,10 +147,10 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     setDetailOpen(true);
   };
 
-  const onAssignDriver = async (driverId: string) => {
-    if (!selectedOrderId || !driverId) return;
+  const onAssignDriver = async () => {
+    if (!selectedOrderId || !selectedDriverIdToAssign) return;
     try {
-      await assignDriverMutation.mutateAsync({ driverId });
+      await assignDriverMutation.mutateAsync(selectedDriverIdToAssign);
       toast.success(t("orders.driverAssigned", "Driver assigned"));
       queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
       detailQuery.refetch();
@@ -189,17 +221,17 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
               />
             </div>
             <Select
-              value={filters.status || ""}
+              value={filters.status || "all"}
               onValueChange={(val) => {
                 setPage(1);
-                setFilters((prev) => ({ ...prev, status: (val as OrderStatus) || undefined }));
+                setFilters((prev) => ({ ...prev, status: val === "all" ? undefined : (val as OrderStatus) }));
               }}
             >
               <SelectTrigger>
                 <SelectValue placeholder={t("orders.status_filter", "Status")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">{t("common.all", "All")}</SelectItem>
+                <SelectItem value="all">{t("common.all", "All")}</SelectItem>
                 {statusOptions.map((s) => (
                   <SelectItem key={s} value={s}>
                     {statusBadge(s).label}
@@ -208,17 +240,17 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
               </SelectContent>
             </Select>
             <Select
-              value={filters.driverId || ""}
+              value={filters.driverId || "all"}
               onValueChange={(val) => {
                 setPage(1);
-                setFilters((prev) => ({ ...prev, driverId: val || undefined }));
+                setFilters((prev) => ({ ...prev, driverId: val === "all" ? undefined : val }));
               }}
             >
               <SelectTrigger>
                 <SelectValue placeholder={t("orders.driver_filter", "Driver")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">{t("common.all", "All")}</SelectItem>
+                <SelectItem value="all">{t("common.all", "All")}</SelectItem>
                 {(driversQuery.data?.items || []).map((driver) => (
                   <SelectItem key={driver.id} value={driver.id}>
                     {driver.fullName}
@@ -248,7 +280,10 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
               <AdminTableSkeleton rows={5} columns={6} />
             </div>
           ) : ordersQuery.isError ? (
-            <ErrorState message={t("orders.loadError", "Unable to load orders")} onRetry={() => ordersQuery.refetch()} />
+            <ErrorState
+              message={getAdminErrorMessage(ordersQuery.error, t, t("orders.loadError", "Unable to load orders"))}
+              onRetry={() => ordersQuery.refetch()}
+            />
           ) : items.length === 0 ? (
             <EmptyState
               title={t("orders.empty", "No orders found")}
@@ -319,7 +354,10 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
           {detailQuery.isLoading ? (
             <AdminTableSkeleton rows={4} columns={3} />
           ) : detailQuery.isError ? (
-            <ErrorState message={t("orders.detailError", "Unable to load order details")} onRetry={() => detailQuery.refetch()} />
+            <ErrorState
+              message={getAdminErrorMessage(detailQuery.error, t, t("orders.detailError", "Unable to load order details"))}
+              onRetry={() => detailQuery.refetch()}
+            />
           ) : !detailQuery.data ? (
             <EmptyState title={t("orders.no_detail", "No details")} />
           ) : (
@@ -375,19 +413,43 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                     <Truck className="w-4 h-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <Select value={detailQuery.data.driver?.id || ""} onValueChange={(val) => onAssignDriver(val)}>
+                    <div className="space-y-2">
+                      <Input
+                        placeholder={t("orders.searchDriver", "Search drivers")}
+                        value={driverSearch}
+                        onChange={(e) => setDriverSearch(e.target.value)}
+                      />
+                    </div>
+                    <Select value={selectedDriverIdToAssign} onValueChange={(val) => setSelectedDriverIdToAssign(val)}>
                       <SelectTrigger>
                         <SelectValue placeholder={t("orders.selectDriver", "Select driver")} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">{t("common.none", "None")}</SelectItem>
                         {(driversQuery.data?.items || []).map((driver) => (
                           <SelectItem key={driver.id} value={driver.id}>
-                            {driver.fullName} - {driver.vehicle?.type || ""}
+                            {driver.fullName} {driver.phone ? `(${driver.phone})` : ""}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={onAssignDriver}
+                        disabled={!selectedDriverIdToAssign || assignDriverMutation.isPending || assignNotAllowed}
+                      >
+                        {assignDriverMutation.isPending
+                          ? t("common.saving", "Saving...")
+                          : t("orders.assignDriver", "Assign driver")}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => driversQuery.refetch()}>
+                        {t("common.refresh", "Refresh")}
+                      </Button>
+                    </div>
+                    {assignNotAllowed && (
+                      <p className="text-xs text-orange-600">
+                        {t("orders.assignDriverDisabled", "Driver assignment is blocked for completed or canceled orders.")}
+                      </p>
+                    )}
                     {detailQuery.data.driver ? (
                       <div className="text-sm text-muted-foreground">
                         {t("orders.currentDriver", "Current:")} {detailQuery.data.driver.fullName} - {detailQuery.data.driver.phone}
@@ -405,13 +467,25 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                     <Receipt className="w-4 h-4" />
                     {t("orders.receipt", "Receipt")}
                   </CardTitle>
+                  <Button size="sm" variant="outline" onClick={() => setReceiptOpen(true)} disabled={!selectedOrderId}>
+                    {t("orders.viewReceipt", "View receipt")}
+                  </Button>
                 </CardHeader>
-                <CardContent>
-                  <OrderReceiptView receipt={receiptQuery.data || null} isLoading={receiptQuery.isLoading} />
+                <CardContent className="text-sm text-muted-foreground">
+                  {t("orders.receiptHint", "Open the receipt to view items, delivery fees, and print it.")}
                 </CardContent>
               </Card>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={receiptOpen} onOpenChange={setReceiptOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>{t("orders.receipt", "Receipt")}</DialogTitle>
+          </DialogHeader>
+          <OrderReceiptView receipt={receiptQuery.data || null} isLoading={receiptQuery.isLoading} />
         </DialogContent>
       </Dialog>
     </div>

@@ -1,21 +1,25 @@
-import type { Timestamped, PagedResponse, PaginatedQuery, FileResource } from "./common";
+import type { PaginatedQuery, PaginatedResponse } from "./common";
 
-export type VehicleType = "CAR" | "BIKE" | "SCOOTER";
+export type UploadableImage = string | { url?: string | null } | File | Blob | null;
 
 export type DriverVehicle = {
-  type: VehicleType;
-  plateNumber: string;
+  id?: string;
+  type?: string;
+  plateNumber?: string;
   color?: string | null;
-  licenseImage?: string | null;
+  licenseImageUrl?: string | null;
+  licenseImage?: UploadableImage;
 };
 
-export type DeliveryDriver = Timestamped & {
+export type DeliveryDriver = {
   id: string;
   fullName: string;
   phone: string;
   nationalId?: string | null;
-  nationalIdImage?: string | null | FileResource;
+  nationalIdImage?: UploadableImage;
   isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
   vehicle?: DriverVehicle | null;
 };
 
@@ -28,14 +32,21 @@ export type DeliveryDriverPayload = {
   fullName: string;
   phone: string;
   nationalId?: string | null;
-  nationalIdImage?: string | null;
+  nationalIdImage?: UploadableImage;
   isActive?: boolean;
+  vehicle?: DriverVehicle | null;
 };
 
-export type DriverVehiclePayload = DriverVehicle;
-
-export type DriversPaged = PagedResponse<DeliveryDriver>;
-
-export type DriverAssignmentPayload = {
-  driverId: string;
+export type DriverVehiclePayload = DriverVehicle & {
+  licenseImageFile?: File | Blob | null;
 };
+
+export type VehicleFormValues = {
+  type: string;
+  plateNumber: string;
+  color: string;
+  licenseImageFile?: File | null;
+  licenseImageUrl?: string | null;
+};
+
+export type DriversPaged = PaginatedResponse<DeliveryDriver>;

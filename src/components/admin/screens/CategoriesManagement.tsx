@@ -11,6 +11,7 @@ import {
   reorderCategories,
   type Category,
 } from "../../../services/categories.service";
+import { uploadAdminFile } from "../../../services/uploads.service";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";
@@ -55,7 +56,7 @@ import { EmptyState } from "../../admin/common/EmptyState";
 import { ErrorState } from "../../admin/common/ErrorState";
 
 const PAGE_SIZE = 20;
-const MAX_FILE_MB = 5;
+const MAX_FILE_MB = 2;
 
 const categoryFormSchema = z.object({
   name: z.string().min(2, "Name is required"),
@@ -174,6 +175,12 @@ export function CategoriesManagement() {
       values: CategoryFormValues;
       imageFile: File | null;
     }) => {
+      let imageUrl = values.imageUrl?.trim() || undefined;
+      if (imageFile) {
+        const { url } = await uploadAdminFile(imageFile);
+        imageUrl = url;
+      }
+
       const payload: Partial<Category> = {
         name: values.name.trim(),
         nameAr: values.nameAr?.trim() || undefined,
@@ -181,12 +188,13 @@ export function CategoriesManagement() {
         parentId: values.parentId ? values.parentId : null,
         isActive: values.isActive,
         sortOrder: Number(values.sortOrder || 0),
-        imageUrl: imageFile ? undefined : values.imageUrl || undefined,
+        imageUrl,
       };
+
       if (id) {
-        return updateCategory(id, payload, imageFile);
+        return updateCategory(id, payload, null);
       }
-      return createCategory(payload, imageFile);
+      return createCategory(payload, null);
     },
     onSuccess: (_, variables) => {
       toast.success(
@@ -272,7 +280,10 @@ export function CategoriesManagement() {
               </div>
             ) : categoriesQuery.isError ? (
               <div className="p-6">
-                <ErrorState message={t("categories.loadError") || "Unable to load categories"} onRetry={() => categoriesQuery.refetch()} />
+                <ErrorState
+                  message={getAdminErrorMessage(categoriesQuery.error, t, t("categories.loadError", "Unable to load categories"))}
+                  onRetry={() => categoriesQuery.refetch()}
+                />
               </div>
             ) : rows.length === 0 ? (
               <div className="p-6">

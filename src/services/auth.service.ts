@@ -32,16 +32,21 @@ export async function adminLogin(identifier: string, password: string): Promise<
 export async function refreshAccessToken(
   refreshToken: string
 ): Promise<{ accessToken: string; refreshToken?: string }> {
-  if (!refreshToken) throw new Error("Refresh token missing");
-  const { data } = await api.post<{ accessToken: string; refreshToken?: string }>(
-    "/api/v1/auth/refresh",
-    null,
-    {
-      headers: {
-        Authorization: `Bearer ${refreshToken}`,
-      },
-    }
-  );
+  if (!refreshToken) {
+    // Allow cookie-based refresh when token is stored as HttpOnly cookie
+    const { data } = await api.post<{ accessToken: string; refreshToken?: string }>("/api/v1/auth/refresh", null, {
+      withCredentials: true,
+    });
+    if (!data?.accessToken) throw new Error("Refresh token failed");
+    return data;
+  }
+
+  const { data } = await api.post<{ accessToken: string; refreshToken?: string }>("/api/v1/auth/refresh", null, {
+    headers: {
+      Authorization: `Bearer ${refreshToken}`,
+    },
+    withCredentials: true,
+  });
   if (!data?.accessToken) throw new Error("Refresh token failed");
   return data;
 }

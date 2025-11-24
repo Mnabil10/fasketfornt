@@ -217,7 +217,7 @@ export function CustomersManagement() {
               <AdminTableSkeleton rows={5} columns={5} />
             ) : customersQuery.isError ? (
               <ErrorState
-                message={t("customers.loadError") || "Unable to load customers"}
+                message={getAdminErrorMessage(customersQuery.error, t, t("customers.loadError", "Unable to load customers"))}
                 onRetry={() => customersQuery.refetch()}
               />
             ) : items.length === 0 ? (

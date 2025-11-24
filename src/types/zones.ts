@@ -1,21 +1,28 @@
-import type { PaginatedQuery, PagedResponse, Timestamped } from "./common";
+import type { PaginatedQuery, PaginatedResponse } from "./common";
 
-export type DeliveryZone = Timestamped & {
+export type DeliveryZone = {
   id: string;
-  name: string;
-  city: string;
+  nameEn: string;
+  nameAr: string;
+  city?: string | null;
   region?: string | null;
-  deliveryFeeCents: number;
+  fee: number;
+  feeCents: number;
+  etaMinutes?: number | null;
   freeDeliveryThresholdCents?: number | null;
   minOrderAmountCents?: number | null;
   isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type DeliveryZonePayload = {
-  name: string;
-  city: string;
+  nameEn: string;
+  nameAr?: string | null;
+  city?: string | null;
   region?: string | null;
-  deliveryFeeCents: number;
+  feeCents: number;
+  etaMinutes?: number | null;
   freeDeliveryThresholdCents?: number | null;
   minOrderAmountCents?: number | null;
   isActive?: boolean;
@@ -28,4 +35,4 @@ export type DeliveryZoneFilters = PaginatedQuery & {
   isActive?: boolean;
 };
 
-export type DeliveryZonesPaged = PagedResponse<DeliveryZone>;
+export type DeliveryZonesPaged<T = DeliveryZone> = PaginatedResponse<T>;

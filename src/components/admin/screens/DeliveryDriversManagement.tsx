@@ -18,7 +18,7 @@ import {
 } from "../../../hooks/api/useDeliveryDrivers";
 import { getAdminErrorMessage } from "../../../lib/errors";
 import { toast } from "sonner";
-import type { DeliveryDriverFilters, DeliveryDriverPayload } from "../../../types/delivery";
+import type { DeliveryDriverFilters, DeliveryDriverPayload, DriverVehiclePayload } from "../../../types/delivery";
 import { saveDeliveryDriverVehicle, updateDeliveryDriverStatus } from "../../../services/deliveryDrivers.service";
 import { DELIVERY_DRIVERS_QUERY_KEY } from "../../../hooks/api/useDeliveryDrivers";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -156,7 +156,10 @@ function DriverListPage({ onCreate, onEdit }: DriverListPageProps) {
       {driversQuery.isLoading ? (
         <AdminTableSkeleton rows={5} columns={5} />
       ) : driversQuery.isError ? (
-        <ErrorState message={t("drivers.loadError", "Unable to load drivers")} onRetry={() => driversQuery.refetch()} />
+        <ErrorState
+          message={getAdminErrorMessage(driversQuery.error, t, t("drivers.loadError", "Unable to load drivers"))}
+          onRetry={() => driversQuery.refetch()}
+        />
       ) : items.length === 0 ? (
         <EmptyState
           title={t("drivers.emptyTitle", "No drivers yet")}
@@ -212,23 +215,43 @@ function DriverFormPage({ mode, driverId, onDone }: DriverFormPageProps) {
   const [submitting, setSubmitting] = useState(false);
   const driverQuery = useDeliveryDriver(driverId, { enabled: mode === "edit" });
 
+  const normalizeImage = (value: unknown) => {
+    if (!value) return null;
+    if (value instanceof File || value instanceof Blob) return value;
+    if (typeof value === "string") return value;
+    if (typeof value === "object" && "url" in (value as any)) return (value as any).url as string;
+    return null;
+  };
+
+  const normalizeLicenseUrl = (value?: string | null) => {
+    if (!value) return null;
+    const trimmed = value.trim();
+    return trimmed || null;
+  };
+
   const handleSubmit = async (values: DriverFormValues) => {
     setSubmitting(true);
-    const payload: DeliveryDriverPayload = {
-      fullName: values.fullName,
-      phone: values.phone,
-      nationalId: values.nationalId || null,
-      nationalIdImage: values.nationalIdImage || null,
-      isActive: values.isActive,
+    const color = values.color.trim();
+    const vehiclePayload: DriverVehiclePayload = {
+      type: values.type || "CAR",
+      plateNumber: values.plateNumber.trim(),
+      color,
+      licenseImageFile: values.licenseImageFile ?? null,
+      licenseImageUrl: normalizeLicenseUrl(values.licenseImageUrl),
     };
-    const vehiclePayload = values.vehicle?.plateNumber
-      ? {
-          type: values.vehicle.type || "CAR",
-          plateNumber: values.vehicle.plateNumber,
-          color: values.vehicle.color || undefined,
-          licenseImage: values.vehicle.licenseImage || undefined,
-        }
-      : null;
+    const payload: DeliveryDriverPayload = {
+      fullName: values.fullName.trim(),
+      phone: values.phone.trim(),
+      nationalId: values.nationalId?.trim() || null,
+      nationalIdImage: normalizeImage(values.nationalIdImage),
+      isActive: values.isActive,
+      vehicle: {
+        type: vehiclePayload.type,
+        plateNumber: vehiclePayload.plateNumber,
+        color: vehiclePayload.color,
+        licenseImageUrl: vehiclePayload.licenseImageUrl ?? null,
+      },
+    };
     try {
       const driver =
         mode === "create" ? await createDriver.mutateAsync(payload) : await updateDriver.mutateAsync(payload);
@@ -256,7 +279,10 @@ function DriverFormPage({ mode, driverId, onDone }: DriverFormPageProps) {
   if (mode === "edit" && driverQuery.isError) {
     return (
       <div className="p-6">
-        <ErrorState message={t("drivers.loadError", "Unable to load driver")} onRetry={() => driverQuery.refetch()} />
+        <ErrorState
+          message={getAdminErrorMessage(driverQuery.error, t, t("drivers.loadError", "Unable to load driver"))}
+          onRetry={() => driverQuery.refetch()}
+        />
       </div>
     );
   }

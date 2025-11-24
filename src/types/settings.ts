@@ -6,20 +6,17 @@ export type GeneralSettings = {
   contactEmail?: string | null;
   contactPhone?: string | null;
   storeAddress?: string | null;
-  timezone?: string | null;
-  language?: string | null;
-  currency?: string | null;
+  businessHours?: string | null;
 };
 
 export type DeliverySettings = {
-  deliveryEnabled: boolean;
-  defaultDeliveryFeeCents: number;
-  freeDeliveryThresholdCents: number;
-  perZoneOverrides?: Array<{
-    zoneId: string;
-    deliveryFeeCents: number;
-    freeDeliveryThresholdCents?: number | null;
-  }>;
+  deliveryFee?: number;
+  deliveryFeeCents?: number;
+  freeDeliveryMinimum?: number;
+  freeDeliveryMinimumCents?: number;
+  estimatedDeliveryTime?: number | null;
+  maxDeliveryRadius?: number | null;
+  deliveryZones?: DeliveryZone[];
 };
 
 export type PaymentSettings = {
@@ -51,12 +48,29 @@ export type SystemSettings = {
   maxLoginAttempts?: number;
   dataRetentionDays?: number;
   backupFrequency?: string | null;
+  timezone?: string | null;
+  language?: string | null;
+  currency?: string | null;
+};
+
+export type LoyaltySettings = {
+  enabled?: boolean;
+  earnPoints?: number;
+  earnPerCents?: number;
+  earnRate?: number;
+  redeemRate?: number;
+  redeemUnitCents?: number;
+  redeemRateValue?: number;
+  minRedeemPoints?: number;
+  maxDiscountPercent?: number;
+  maxRedeemPerOrder?: number;
+  resetThreshold?: number;
 };
 
 export type SettingsPayload = {
   general?: GeneralSettings;
   delivery?: DeliverySettings;
-  deliveryZones?: DeliveryZone[];
+  loyalty?: LoyaltySettings;
   payments?: PaymentSettings;
   notifications?: NotificationsSettings;
   system?: SystemSettings;

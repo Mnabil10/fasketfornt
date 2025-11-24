@@ -6,12 +6,12 @@ import {
   listDeliveryZones,
   updateDeliveryZone,
 } from "../../services/deliveryZones.service";
-import type { DeliveryZoneFilters, DeliveryZonePayload } from "../../types/zones";
+import type { DeliveryZone, DeliveryZoneFilters, DeliveryZonePayload, DeliveryZonesPaged } from "../../types/zones";
 
 export const DELIVERY_ZONES_QUERY_KEY = ["delivery-zones"] as const;
 
 export function useDeliveryZones(filters: DeliveryZoneFilters, options?: { enabled?: boolean }) {
-  return useQuery({
+  return useQuery<DeliveryZonesPaged>({
     queryKey: [...DELIVERY_ZONES_QUERY_KEY, filters] as const,
     queryFn: () => listDeliveryZones(filters),
     placeholderData: keepPreviousData,
@@ -20,7 +20,7 @@ export function useDeliveryZones(filters: DeliveryZoneFilters, options?: { enabl
 }
 
 export function useDeliveryZone(id: string | undefined, options?: { enabled?: boolean }) {
-  return useQuery({
+  return useQuery<DeliveryZone | null>({
     queryKey: [...DELIVERY_ZONES_QUERY_KEY, "detail", id] as const,
     queryFn: () => (id ? getDeliveryZone(id) : Promise.resolve(null)),
     enabled: Boolean(id) && (options?.enabled ?? true),

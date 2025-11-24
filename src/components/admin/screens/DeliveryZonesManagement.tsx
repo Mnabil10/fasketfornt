@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm, type Resolver } from "react-hook-form";
+import { useForm, type FieldError, type Resolver } from "react-hook-form";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";
@@ -24,15 +24,32 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { DELIVERY_ZONES_QUERY_KEY } from "../../../hooks/api/useDeliveryZones";
 import { deleteDeliveryZone } from "../../../services/deliveryZones.service";
 
-const zoneSchema = z.object({
-  name: z.string().min(2),
-  city: z.string().min(2),
-  region: z.string().optional(),
-  deliveryFeeCents: z.coerce.number().min(0),
-  freeDeliveryThresholdCents: z.coerce.number().min(0).nullable().optional(),
-  minOrderAmountCents: z.coerce.number().min(0).nullable().optional(),
-  isActive: z.boolean().default(true),
-});
+const zoneSchema = z
+  .object({
+    nameEn: z.string().trim().min(2, { message: "validation.required" }),
+    nameAr: z.string().optional(),
+    city: z.string().optional(),
+    region: z.string().optional(),
+    feeCents: z.coerce.number({ required_error: "validation.required" }),
+    etaMinutes: z.coerce.number().nullable().optional(),
+    freeDeliveryThresholdCents: z.coerce.number().nullable().optional(),
+    minOrderAmountCents: z.coerce.number().nullable().optional(),
+    isActive: z.boolean().default(true),
+  })
+  .superRefine((val, ctx) => {
+    const numericFields: Array<keyof typeof val> = [
+      "feeCents",
+      "etaMinutes",
+      "freeDeliveryThresholdCents",
+      "minOrderAmountCents",
+    ];
+    numericFields.forEach((field) => {
+      const value = val[field];
+      if (value != null && value < 0) {
+        ctx.addIssue({ code: "custom", path: [field], message: "validation.nonNegative" });
+      }
+    });
+  });
 
 type ZoneFormValues = z.infer<typeof zoneSchema>;
 
@@ -166,7 +183,10 @@ function ZoneListPage({ onCreate, onEdit }: ZoneListPageProps) {
       {zonesQuery.isLoading ? (
         <AdminTableSkeleton rows={4} columns={5} />
       ) : zonesQuery.isError ? (
-        <ErrorState message={t("zones.loadError", "Unable to load delivery zones")} onRetry={() => zonesQuery.refetch()} />
+        <ErrorState
+          message={getAdminErrorMessage(zonesQuery.error, t, t("zones.loadError", "Unable to load delivery zones"))}
+          onRetry={() => zonesQuery.refetch()}
+        />
       ) : zones.length === 0 ? (
         <EmptyState
           title={t("zones.emptyTitle", "No zones created")}
@@ -192,14 +212,19 @@ function ZoneListPage({ onCreate, onEdit }: ZoneListPageProps) {
                 <TableBody>
                   {zones.map((zone) => (
                     <TableRow key={zone.id}>
-                      <TableCell>{zone.name}</TableCell>
                       <TableCell>
                         <div className="flex flex-col">
-                          <span>{zone.city}</span>
+                          <span>{zone.nameEn}</span>
+                          {zone.nameAr && <span className="text-xs text-muted-foreground">{zone.nameAr}</span>}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span>{zone.city || "-"}</span>
                           {zone.region && <span className="text-xs text-muted-foreground">{zone.region}</span>}
                         </div>
                       </TableCell>
-                      <TableCell>{fmtEGP(zone.deliveryFeeCents)}</TableCell>
+                      <TableCell>{fmtEGP(zone.feeCents)}</TableCell>
                       <TableCell>
                         {zone.freeDeliveryThresholdCents != null ? fmtEGP(zone.freeDeliveryThresholdCents) : "-"}
                       </TableCell>
@@ -263,24 +288,32 @@ function ZoneFormPage({ mode, zoneId, onDone }: ZoneFormPageProps) {
   const form = useForm<ZoneFormValues>({
     resolver: zodResolver(zoneSchema) as Resolver<ZoneFormValues>,
     defaultValues: {
-      name: "",
+      nameEn: "",
+      nameAr: "",
       city: "",
       region: "",
-      deliveryFeeCents: 0,
+      feeCents: 0,
+      etaMinutes: null,
       freeDeliveryThresholdCents: 0,
       minOrderAmountCents: 0,
       isActive: true,
     },
   });
 
+  const requiredMark = <span className="text-rose-500">*</span>;
+  const renderError = (error?: FieldError) =>
+    error?.message ? <p className="text-sm text-red-500">{t(error.message, { defaultValue: error.message })}</p> : null;
+
   React.useEffect(() => {
     if (!zoneQuery.data || mode !== "edit") return;
     const z = zoneQuery.data;
     form.reset({
-      name: z.name,
-      city: z.city,
+      nameEn: z.nameEn,
+      nameAr: z.nameAr || "",
+      city: z.city || "",
       region: z.region || "",
-      deliveryFeeCents: z.deliveryFeeCents,
+      feeCents: z.feeCents ?? Math.round(z.fee * 100),
+      etaMinutes: z.etaMinutes ?? null,
       freeDeliveryThresholdCents: z.freeDeliveryThresholdCents ?? 0,
       minOrderAmountCents: z.minOrderAmountCents ?? 0,
       isActive: z.isActive,
@@ -289,14 +322,18 @@ function ZoneFormPage({ mode, zoneId, onDone }: ZoneFormPageProps) {
 
   const handleSubmit = form.handleSubmit(async (values) => {
     setSubmitting(true);
+    const computedFeeCents = Math.round(values.feeCents);
     const payload: DeliveryZonePayload = {
-      name: values.name,
-      city: values.city,
-      region: values.region || null,
-      deliveryFeeCents: Math.round(values.deliveryFeeCents),
+      nameEn: values.nameEn.trim(),
+      nameAr: values.nameAr?.trim() || undefined,
+      city: values.city?.trim() || undefined,
+      region: values.region?.trim() || undefined,
+      feeCents: computedFeeCents,
+      etaMinutes: values.etaMinutes != null ? Math.round(values.etaMinutes) : undefined,
       freeDeliveryThresholdCents:
-        values.freeDeliveryThresholdCents != null ? Math.round(values.freeDeliveryThresholdCents) : null,
-      minOrderAmountCents: values.minOrderAmountCents != null ? Math.round(values.minOrderAmountCents) : null,
+        values.freeDeliveryThresholdCents != null ? Math.round(values.freeDeliveryThresholdCents) : undefined,
+      minOrderAmountCents:
+        values.minOrderAmountCents != null ? Math.round(values.minOrderAmountCents) : undefined,
       isActive: values.isActive,
     };
     try {
@@ -326,7 +363,10 @@ function ZoneFormPage({ mode, zoneId, onDone }: ZoneFormPageProps) {
   if (mode === "edit" && zoneQuery.isError) {
     return (
       <div className="p-6">
-        <ErrorState message={t("zones.loadError", "Unable to load zone")} onRetry={() => zoneQuery.refetch()} />
+        <ErrorState
+          message={getAdminErrorMessage(zoneQuery.error, t, t("zones.loadError", "Unable to load zone"))}
+          onRetry={() => zoneQuery.refetch()}
+        />
       </div>
     );
   }
@@ -343,26 +383,31 @@ function ZoneFormPage({ mode, zoneId, onDone }: ZoneFormPageProps) {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{t("zones.name", "Zone name")}</Label>
-                <Input {...form.register("name")} />
-                {form.formState.errors.name && (
-                  <p className="text-sm text-red-500">{form.formState.errors.name.message}</p>
-                )}
+                <Label>
+                  {t("zones.name", "Zone name (EN)")} {requiredMark}
+                </Label>
+                <Input {...form.register("nameEn")} placeholder={t("zones.name", "Zone name (EN)")} />
+                {renderError(form.formState.errors.nameEn)}
+              </div>
+              <div className="space-y-2">
+                <Label>{t("zones.nameAr", "Zone name (AR)")}</Label>
+                <Input {...form.register("nameAr")} />
               </div>
               <div className="space-y-2">
                 <Label>{t("zones.city", "City / region")}</Label>
                 <Input {...form.register("city")} />
-                {form.formState.errors.city && (
-                  <p className="text-sm text-red-500">{form.formState.errors.city.message}</p>
-                )}
+                {renderError(form.formState.errors.city as FieldError)}
               </div>
               <div className="space-y-2">
                 <Label>{t("zones.region", "Area / district (optional)")}</Label>
                 <Input {...form.register("region")} />
               </div>
               <div className="space-y-2">
-                <Label>{t("zones.deliveryFee", "Delivery fee (cents)")}</Label>
-                <Input type="number" min={0} step={50} {...form.register("deliveryFeeCents", { valueAsNumber: true })} />
+                <Label>
+                  {t("zones.deliveryFee", "Delivery fee (cents)")} {requiredMark}
+                </Label>
+                <Input type="number" min={0} step={50} {...form.register("feeCents", { valueAsNumber: true })} />
+                {renderError(form.formState.errors.feeCents as FieldError)}
               </div>
               <div className="space-y-2">
                 <Label>{t("zones.freeThreshold", "Free delivery threshold (cents)")}</Label>
@@ -372,6 +417,7 @@ function ZoneFormPage({ mode, zoneId, onDone }: ZoneFormPageProps) {
                   step={50}
                   {...form.register("freeDeliveryThresholdCents", { valueAsNumber: true })}
                 />
+                {renderError(form.formState.errors.freeDeliveryThresholdCents as FieldError)}
               </div>
               <div className="space-y-2">
                 <Label>{t("zones.minOrder", "Minimum order (cents)")}</Label>
@@ -381,6 +427,17 @@ function ZoneFormPage({ mode, zoneId, onDone }: ZoneFormPageProps) {
                   step={50}
                   {...form.register("minOrderAmountCents", { valueAsNumber: true })}
                 />
+                {renderError(form.formState.errors.minOrderAmountCents as FieldError)}
+              </div>
+              <div className="space-y-2">
+                <Label>{t("zones.etaMinutes", "ETA (minutes)")}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={5}
+                  {...form.register("etaMinutes", { valueAsNumber: true })}
+                />
+                {renderError(form.formState.errors.etaMinutes as FieldError)}
               </div>
               <div className="flex items-center justify-between md:col-span-2 border rounded-lg p-3">
                 <div>

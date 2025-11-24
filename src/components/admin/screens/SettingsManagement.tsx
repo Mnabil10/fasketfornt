@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { useForm, useFieldArray, type Resolver } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
@@ -16,9 +16,14 @@ import { getAdminErrorMessage } from "../../../lib/errors";
 import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
 import { ErrorState } from "../common/ErrorState";
 import { EmptyState } from "../common/EmptyState";
-import type { DeliverySettings, GeneralSettings, PaymentSettings, NotificationsSettings, SystemSettings } from "../../../types/settings";
-import { useDeliveryZones } from "../../../hooks/api/useDeliveryZones";
-import { Badge } from "../../ui/badge";
+import type {
+  DeliverySettings,
+  GeneralSettings,
+  LoyaltySettings,
+  PaymentSettings,
+  NotificationsSettings,
+  SystemSettings,
+} from "../../../types/settings";
 import { useNavigate } from "react-router-dom";
 
 const generalSchema = z.object({
@@ -27,22 +32,14 @@ const generalSchema = z.object({
   contactEmail: z.string().email().optional(),
   contactPhone: z.string().optional(),
   storeAddress: z.string().optional(),
-  timezone: z.string().optional(),
-  language: z.string().optional(),
-  currency: z.string().optional(),
-});
-
-const deliveryOverrideSchema = z.object({
-  zoneId: z.string(),
-  deliveryFeeCents: z.coerce.number().min(0),
-  freeDeliveryThresholdCents: z.coerce.number().min(0).nullable().optional(),
+  businessHours: z.string().optional(),
 });
 
 const deliverySchema = z.object({
-  deliveryEnabled: z.boolean(),
-  defaultDeliveryFeeCents: z.coerce.number().min(0),
-  freeDeliveryThresholdCents: z.coerce.number().min(0),
-  perZoneOverrides: z.array(deliveryOverrideSchema).default([]),
+  deliveryFee: z.coerce.number().min(0).default(0),
+  freeDeliveryMinimum: z.coerce.number().min(0).default(0),
+  estimatedDeliveryTime: z.coerce.number().min(0).nullable().optional(),
+  maxDeliveryRadius: z.coerce.number().min(0).nullable().optional(),
 });
 
 const paymentSchema = z.object({
@@ -65,6 +62,26 @@ const systemSchema = z.object({
   allowRegistrations: z.boolean(),
   requireEmailVerification: z.boolean(),
   sessionTimeout: z.coerce.number().min(5),
+  maxLoginAttempts: z.coerce.number().min(1).optional(),
+  dataRetentionDays: z.coerce.number().min(0).optional(),
+  backupFrequency: z.string().optional(),
+  timezone: z.string().optional(),
+  language: z.string().optional(),
+  currency: z.string().optional(),
+});
+
+const loyaltySchema = z.object({
+  enabled: z.boolean(),
+  earnPoints: z.coerce.number().min(0),
+  earnPerAmount: z.coerce.number().min(0),
+  earnRate: z.coerce.number().min(0),
+  redeemRate: z.coerce.number().min(0),
+  redeemUnitAmount: z.coerce.number().min(0),
+  redeemRateValue: z.coerce.number().min(0),
+  minRedeemPoints: z.coerce.number().min(0),
+  maxDiscountPercent: z.coerce.number().min(0).max(100),
+  maxRedeemPerOrder: z.coerce.number().min(0),
+  resetThreshold: z.coerce.number().min(0),
 });
 
 type GeneralFormValues = z.infer<typeof generalSchema>;
@@ -72,6 +89,7 @@ type DeliveryFormValues = z.infer<typeof deliverySchema>;
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 type NotificationsFormValues = z.infer<typeof notificationsSchema>;
 type SystemFormValues = z.infer<typeof systemSchema>;
+type LoyaltyFormValues = z.infer<typeof loyaltySchema>;
 
 type SettingsManagementProps = {
   initialSection?: string;
@@ -81,12 +99,12 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
   const { t } = useTranslation();
   const navigate = useNavigate();
   const settingsQuery = useSettingsAdmin();
-  const zonesQuery = useDeliveryZones({ page: 1, pageSize: 100, isActive: true });
   const generalMutation = useUpdateSettingsSection("general");
   const deliveryMutation = useUpdateSettingsSection("delivery");
   const paymentsMutation = useUpdateSettingsSection("payments");
   const notificationsMutation = useUpdateSettingsSection("notifications");
   const systemMutation = useUpdateSettingsSection("system");
+  const loyaltyMutation = useUpdateSettingsSection("loyalty");
 
   const [activeTab, setActiveTab] = React.useState(() => {
     if (initialSection === "delivery") return "delivery";
@@ -102,19 +120,17 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
       contactEmail: "",
       contactPhone: "",
       storeAddress: "",
-      timezone: "",
-      language: "",
-      currency: "",
+      businessHours: "",
     },
   });
 
   const deliveryForm = useForm<DeliveryFormValues>({
     resolver: zodResolver(deliverySchema) as Resolver<DeliveryFormValues>,
     defaultValues: {
-      deliveryEnabled: true,
-      defaultDeliveryFeeCents: 0,
-      freeDeliveryThresholdCents: 0,
-      perZoneOverrides: [],
+      deliveryFee: 0,
+      freeDeliveryMinimum: 0,
+      estimatedDeliveryTime: null,
+      maxDeliveryRadius: null,
     },
   });
 
@@ -146,12 +162,30 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
       allowRegistrations: true,
       requireEmailVerification: true,
       sessionTimeout: 30,
+      maxLoginAttempts: 5,
+      dataRetentionDays: 0,
+      backupFrequency: "",
+      timezone: "",
+      language: "",
+      currency: "",
     },
   });
 
-  const { fields: zoneOverrideFields, replace: replaceOverrides } = useFieldArray({
-    control: deliveryForm.control,
-    name: "perZoneOverrides",
+  const loyaltyForm = useForm<LoyaltyFormValues>({
+    resolver: zodResolver(loyaltySchema) as Resolver<LoyaltyFormValues>,
+    defaultValues: {
+      enabled: false,
+      earnPoints: 1,
+      earnPerAmount: 1,
+      earnRate: 1,
+      redeemRate: 1,
+      redeemUnitAmount: 1,
+      redeemRateValue: 1,
+      minRedeemPoints: 0,
+      maxDiscountPercent: 100,
+      maxRedeemPerOrder: 0,
+      resetThreshold: 0,
+    },
   });
 
   useEffect(() => {
@@ -163,9 +197,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
         contactEmail: g.contactEmail || "",
         contactPhone: g.contactPhone || "",
         storeAddress: g.storeAddress || "",
-        timezone: g.timezone || "",
-        language: g.language || "",
-        currency: g.currency || "",
+        businessHours: g.businessHours || "",
       });
     }
   }, [settingsQuery.data?.general, generalForm]);
@@ -174,28 +206,14 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
     const d = settingsQuery.data?.delivery as DeliverySettings | undefined;
     if (!d) return;
 
-    const overridesMap = new Map<string, { deliveryFeeCents: number; freeDeliveryThresholdCents?: number | null }>(
-      (d.perZoneOverrides || []).map((o) => [o.zoneId, { deliveryFeeCents: o.deliveryFeeCents, freeDeliveryThresholdCents: o.freeDeliveryThresholdCents }])
-    );
-
-    const zoneOverrides = (zonesQuery.data?.items || []).map((zone) => {
-      const override = overridesMap.get(zone.id);
-      return {
-        zoneId: zone.id,
-        deliveryFeeCents: override?.deliveryFeeCents ?? d.defaultDeliveryFeeCents ?? 0,
-        freeDeliveryThresholdCents: override?.freeDeliveryThresholdCents ?? d.freeDeliveryThresholdCents ?? 0,
-      };
-    });
-
-    replaceOverrides(zoneOverrides);
-
     deliveryForm.reset({
-      deliveryEnabled: d.deliveryEnabled ?? true,
-      defaultDeliveryFeeCents: d.defaultDeliveryFeeCents ?? 0,
-      freeDeliveryThresholdCents: d.freeDeliveryThresholdCents ?? 0,
-      perZoneOverrides: zoneOverrides,
+      deliveryFee: d.deliveryFee ?? (d.deliveryFeeCents != null ? d.deliveryFeeCents / 100 : 0),
+      freeDeliveryMinimum:
+        d.freeDeliveryMinimum ?? (d.freeDeliveryMinimumCents != null ? d.freeDeliveryMinimumCents / 100 : 0),
+      estimatedDeliveryTime: d.estimatedDeliveryTime ?? null,
+      maxDeliveryRadius: d.maxDeliveryRadius ?? null,
     });
-  }, [settingsQuery.data?.delivery, zonesQuery.data?.items, deliveryForm, replaceOverrides]);
+  }, [settingsQuery.data?.delivery, deliveryForm]);
 
   useEffect(() => {
     const p = settingsQuery.data?.payments as PaymentSettings | undefined;
@@ -228,8 +246,32 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
       allowRegistrations: s.allowRegistrations ?? true,
       requireEmailVerification: s.requireEmailVerification ?? true,
       sessionTimeout: s.sessionTimeout ?? 30,
+      maxLoginAttempts: s.maxLoginAttempts ?? 5,
+      dataRetentionDays: s.dataRetentionDays ?? 0,
+      backupFrequency: s.backupFrequency ?? "",
+      timezone: s.timezone ?? "",
+      language: s.language ?? "",
+      currency: s.currency ?? "",
     });
   }, [settingsQuery.data?.system, systemForm]);
+
+  useEffect(() => {
+    const l = settingsQuery.data?.loyalty as LoyaltySettings | undefined;
+    if (!l) return;
+    loyaltyForm.reset({
+      enabled: l.enabled ?? false,
+      earnPoints: l.earnPoints ?? 1,
+      earnPerAmount: l.earnPerCents != null ? l.earnPerCents / 100 : 1,
+      earnRate: l.earnRate ?? 1,
+      redeemRate: l.redeemRate ?? 1,
+      redeemUnitAmount: l.redeemUnitCents != null ? l.redeemUnitCents / 100 : 1,
+      redeemRateValue: l.redeemRateValue ?? 1,
+      minRedeemPoints: l.minRedeemPoints ?? 0,
+      maxDiscountPercent: l.maxDiscountPercent ?? 100,
+      maxRedeemPerOrder: l.maxRedeemPerOrder ?? 0,
+      resetThreshold: l.resetThreshold ?? 0,
+    });
+  }, [settingsQuery.data?.loyalty, loyaltyForm]);
 
   const handleGeneralSave = generalForm.handleSubmit(async (values) => {
     try {
@@ -242,14 +284,12 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
 
   const handleDeliverySave = deliveryForm.handleSubmit(async (values) => {
     const payload: DeliverySettings = {
-      deliveryEnabled: values.deliveryEnabled,
-      defaultDeliveryFeeCents: Math.round(values.defaultDeliveryFeeCents),
-      freeDeliveryThresholdCents: Math.round(values.freeDeliveryThresholdCents),
-      perZoneOverrides: values.perZoneOverrides?.map((z) => ({
-        zoneId: z.zoneId,
-        deliveryFeeCents: Math.round(z.deliveryFeeCents),
-        freeDeliveryThresholdCents: z.freeDeliveryThresholdCents != null ? Math.round(z.freeDeliveryThresholdCents) : undefined,
-      })),
+      deliveryFee: values.deliveryFee,
+      deliveryFeeCents: Math.round(values.deliveryFee * 100),
+      freeDeliveryMinimum: values.freeDeliveryMinimum,
+      freeDeliveryMinimumCents: Math.round(values.freeDeliveryMinimum * 100),
+      estimatedDeliveryTime: values.estimatedDeliveryTime ?? null,
+      maxDeliveryRadius: values.maxDeliveryRadius ?? null,
     };
     try {
       await deliveryMutation.mutateAsync(payload);
@@ -295,9 +335,37 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
       allowRegistrations: values.allowRegistrations,
       requireEmailVerification: values.requireEmailVerification,
       sessionTimeout: values.sessionTimeout,
+      maxLoginAttempts: values.maxLoginAttempts,
+      dataRetentionDays: values.dataRetentionDays,
+      backupFrequency: values.backupFrequency,
+      timezone: values.timezone,
+      language: values.language,
+      currency: values.currency,
     };
     try {
       await systemMutation.mutateAsync(payload);
+      toast.success(t("settings.saved", "Settings updated"));
+    } catch (error) {
+      toast.error(getAdminErrorMessage(error, t));
+    }
+  });
+
+  const handleLoyaltySave = loyaltyForm.handleSubmit(async (values) => {
+    const payload: LoyaltySettings = {
+      enabled: values.enabled,
+      earnPoints: values.earnPoints,
+      earnPerCents: Math.round(values.earnPerAmount * 100),
+      earnRate: values.earnRate,
+      redeemRate: values.redeemRate,
+      redeemUnitCents: Math.round(values.redeemUnitAmount * 100),
+      redeemRateValue: values.redeemRateValue,
+      minRedeemPoints: values.minRedeemPoints,
+      maxDiscountPercent: values.maxDiscountPercent,
+      maxRedeemPerOrder: values.maxRedeemPerOrder,
+      resetThreshold: values.resetThreshold,
+    };
+    try {
+      await loyaltyMutation.mutateAsync(payload);
       toast.success(t("settings.saved", "Settings updated"));
     } catch (error) {
       toast.error(getAdminErrorMessage(error, t));
@@ -315,7 +383,10 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
   if (settingsQuery.isError) {
     return (
       <div className="p-6">
-        <ErrorState message={t("settings.loadError", "Unable to load settings")} onRetry={() => settingsQuery.refetch()} />
+        <ErrorState
+          message={getAdminErrorMessage(settingsQuery.error, t, t("settings.loadError", "Unable to load settings"))}
+          onRetry={() => settingsQuery.refetch()}
+        />
       </div>
     );
   }
@@ -344,6 +415,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
         <TabsList className="flex flex-wrap">
           <TabsTrigger value="general">{t("settings.general", "General")}</TabsTrigger>
           <TabsTrigger value="delivery">{t("settings.delivery", "Delivery")}</TabsTrigger>
+          <TabsTrigger value="loyalty">{t("settings.loyalty", "Loyalty")}</TabsTrigger>
           <TabsTrigger value="payments">{t("settings.payments", "Payments")}</TabsTrigger>
           <TabsTrigger value="notifications">{t("settings.notifications", "Notifications")}</TabsTrigger>
           <TabsTrigger value="system">{t("settings.system", "System")}</TabsTrigger>
@@ -377,16 +449,8 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                   <Input {...generalForm.register("storeAddress")} />
                 </div>
                 <div className="space-y-2">
-                  <Label>{t("settings.timezone", "Timezone")}</Label>
-                  <Input {...generalForm.register("timezone")} />
-                </div>
-                <div className="space-y-2">
-                  <Label>{t("settings.language", "Language")}</Label>
-                  <Input {...generalForm.register("language")} />
-                </div>
-                <div className="space-y-2">
-                  <Label>{t("settings.currency", "Currency")}</Label>
-                  <Input {...generalForm.register("currency")} />
+                  <Label>{t("settings.businessHours", "Business hours")}</Label>
+                  <Input {...generalForm.register("businessHours")} />
                 </div>
                 <div className="md:col-span-2 flex justify-end">
                   <Button type="submit" disabled={generalMutation.isPending}>
@@ -406,70 +470,174 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
             <CardContent className="space-y-4">
               <form className="space-y-4" onSubmit={handleDeliverySave}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-center justify-between border rounded-lg p-3">
-                    <div>
-                      <p className="font-medium">{t("settings.deliveryEnabled", "Enable delivery")}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {t("settings.deliveryEnabledHint", "Toggle customer delivery availability")}
-                      </p>
-                    </div>
-                    <Switch
-                      checked={deliveryForm.watch("deliveryEnabled")}
-                      onCheckedChange={(checked) => deliveryForm.setValue("deliveryEnabled", checked)}
+                  <div className="space-y-2">
+                    <Label>{t("settings.defaultDeliveryFee", "Default delivery fee (currency)")}</Label>
+                    <Input type="number" step="0.01" {...deliveryForm.register("deliveryFee", { valueAsNumber: true })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t("settings.freeDeliveryThreshold", "Free delivery minimum (currency)")}</Label>
+                    <Input type="number" step="0.01" {...deliveryForm.register("freeDeliveryMinimum", { valueAsNumber: true })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t("settings.estimatedDeliveryTime", "Estimated delivery time (minutes)")}</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={5}
+                      {...deliveryForm.register("estimatedDeliveryTime", { valueAsNumber: true })}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>{t("settings.defaultDeliveryFee", "Default fee (cents)")}</Label>
-                    <Input type="number" {...deliveryForm.register("defaultDeliveryFeeCents", { valueAsNumber: true })} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t("settings.freeDeliveryThreshold", "Free delivery threshold (cents)")}</Label>
+                    <Label>{t("settings.maxDeliveryRadius", "Max delivery radius (km)")}</Label>
                     <Input
                       type="number"
-                      {...deliveryForm.register("freeDeliveryThresholdCents", { valueAsNumber: true })}
+                      min={0}
+                      step="0.1"
+                      {...deliveryForm.register("maxDeliveryRadius", { valueAsNumber: true })}
                     />
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold">{t("settings.zoneOverrides", "Per-zone overrides")}</h3>
-                    <Badge variant="outline">{t("settings.liveZones", "Live zones: {{count}}", { count: zoneOverrideFields.length })}</Badge>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
+                    {t("settings.manageZonesHint", "Manage delivery zones and per-zone fees from the zones screen.")}
                   </div>
-                  <div className="space-y-3">
-                    {zoneOverrideFields.length === 0 && (
-                      <p className="text-sm text-muted-foreground">{t("zones.emptyDesc", "No zones found. Add a zone first.")}</p>
-                    )}
-                    {zoneOverrideFields.map((field, idx) => (
-                      <div key={field.id} className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 border rounded-lg">
-                        <div>
-                          <p className="font-medium">{zonesQuery.data?.items?.find((z) => z.id === field.zoneId)?.name || field.zoneId}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {zonesQuery.data?.items?.find((z) => z.id === field.zoneId)?.city}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <Label>{t("settings.deliveryFeeOverride", "Delivery fee (cents)")}</Label>
-                          <Input
-                            type="number"
-                            {...deliveryForm.register(`perZoneOverrides.${idx}.deliveryFeeCents` as const, { valueAsNumber: true })}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label>{t("settings.freeThresholdOverride", "Free threshold (cents)")}</Label>
-                          <Input
-                            type="number"
-                            {...deliveryForm.register(`perZoneOverrides.${idx}.freeDeliveryThresholdCents` as const, { valueAsNumber: true })}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <Button variant="outline" type="button" onClick={() => navigate("/settings/delivery-zones")}>
+                    {t("zones.manage", "Manage delivery zones")}
+                  </Button>
                 </div>
 
                 <div className="flex justify-end">
                   <Button type="submit" disabled={deliveryMutation.isPending}>
                     {deliveryMutation.isPending ? t("common.saving", "Saving...") : t("common.save", "Save")}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="loyalty" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("settings.loyalty", "Loyalty")}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <form className="space-y-6" onSubmit={handleLoyaltySave}>
+                <div className="flex items-center justify-between border rounded-lg p-3">
+                  <div>
+                    <p className="font-medium">{t("settings.loyaltyEnable", "Enable loyalty program")}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t("settings.loyaltyEnableDesc", "Allow customers to earn and redeem points")}
+                    </p>
+                  </div>
+                  <Switch checked={loyaltyForm.watch("enabled")} onCheckedChange={(v) => loyaltyForm.setValue("enabled", v)} />
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-muted-foreground">{t("settings.loyaltyEarning", "Earning rules")}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>{t("settings.loyaltyEarnPoints", "Points awarded")}</Label>
+                      <Input type="number" min={0} step="0.01" {...loyaltyForm.register("earnPoints", { valueAsNumber: true })} />
+                      <p className="text-xs text-muted-foreground">
+                        {t("settings.loyaltyEarnPointsDesc", "Points granted each time the spend rule is met")}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("settings.loyaltyEarnPer", "Spend amount per reward (currency)")}</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        {...loyaltyForm.register("earnPerAmount", { valueAsNumber: true })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("settings.loyaltyEarnPerDesc", "Amount customers must spend to earn the points above")}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("settings.loyaltyEarnRate", "Earn rate multiplier")}</Label>
+                      <Input type="number" min={0} step="0.01" {...loyaltyForm.register("earnRate", { valueAsNumber: true })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("settings.loyaltyReset", "Points reset threshold")}</Label>
+                      <Input type="number" min={0} step="1" {...loyaltyForm.register("resetThreshold", { valueAsNumber: true })} />
+                      <p className="text-xs text-muted-foreground">
+                        {t("settings.loyaltyResetDesc", "Set when points expire or reset.")}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-muted-foreground">{t("settings.loyaltyRedeeming", "Redemption rules")}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>{t("settings.loyaltyRedeemRate", "Points per redeem unit")}</Label>
+                      <Input type="number" min={0} step="1" {...loyaltyForm.register("redeemRate", { valueAsNumber: true })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("settings.loyaltyRedeemUnit", "Redeem unit (currency)")}</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        {...loyaltyForm.register("redeemUnitAmount", { valueAsNumber: true })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("settings.loyaltyRedeemValue", "Redeem value per unit")}</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        {...loyaltyForm.register("redeemRateValue", { valueAsNumber: true })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t("settings.loyaltyRedeemValueDesc", "Discount value granted for each redeem unit")}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-muted-foreground">{t("settings.loyaltyLimits", "Limits")}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>{t("settings.loyaltyMinRedeem", "Minimum redeem points")}</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="1"
+                        {...loyaltyForm.register("minRedeemPoints", { valueAsNumber: true })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("settings.loyaltyMaxRedeem", "Max points per order")}</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="1"
+                        {...loyaltyForm.register("maxRedeemPerOrder", { valueAsNumber: true })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("settings.loyaltyMaxDiscount", "Max discount (%)")}</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="1"
+                        {...loyaltyForm.register("maxDiscountPercent", { valueAsNumber: true })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={loyaltyMutation.isPending}>
+                    {loyaltyMutation.isPending ? t("common.saving", "Saving...") : t("common.save", "Save")}
                   </Button>
                 </div>
               </form>
@@ -597,6 +765,32 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                 <div className="space-y-2">
                   <Label>{t("settings.sessionTimeout", "Session timeout (minutes)")}</Label>
                   <Input type="number" {...systemForm.register("sessionTimeout", { valueAsNumber: true })} />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>{t("settings.maxLoginAttempts", "Max login attempts")}</Label>
+                    <Input type="number" min={1} {...systemForm.register("maxLoginAttempts", { valueAsNumber: true })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t("settings.dataRetentionDays", "Data retention (days)")}</Label>
+                    <Input type="number" min={0} {...systemForm.register("dataRetentionDays", { valueAsNumber: true })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t("settings.backupFrequency", "Backup frequency")}</Label>
+                    <Input {...systemForm.register("backupFrequency")} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t("settings.timezone", "Timezone")}</Label>
+                    <Input {...systemForm.register("timezone")} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t("settings.language", "Language")}</Label>
+                    <Input {...systemForm.register("language")} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t("settings.currency", "Currency")}</Label>
+                    <Input {...systemForm.register("currency")} />
+                  </div>
                 </div>
                 <div className="flex justify-end">
                   <Button type="submit" disabled={systemMutation.isPending}>

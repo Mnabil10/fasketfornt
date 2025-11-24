@@ -5,6 +5,8 @@ export type PagedResponse<T> = {
   pageSize: number;
 };
 
+export type PaginatedResponse<T> = PagedResponse<T>;
+
 export type PaginatedQuery = {
   page?: number;
   pageSize?: number;

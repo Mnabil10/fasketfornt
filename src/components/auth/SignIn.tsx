@@ -7,47 +7,41 @@ import { Button } from "../ui/button";
 import { useTranslation } from "react-i18next";
 import { adminLogin } from "../../services/auth.service";
 import { useAuth } from "../../auth/AuthProvider";
-import { useLocation, useNavigate } from "react-router-dom";
-import { ShoppingCartIcon } from "lucide-react";
+import { useLocation, useNavigate, type Location } from "react-router-dom";
 import BrandLogo from "../common/BrandLogo";
 import { useDirection } from "../../hooks/useDirection";
+import { getAdminErrorMessage, getErrorCode } from "../../lib/errors";
 
-// 1) Helpers: trim + إزالة مسافات خفية + تحويل أرقام عربية/فارسي إلى لاتيني
-function normalizeDigits(s: string) {
-  const map: Record<string, string> = {
-    // Arabic-Indic ٠١٢٣٤٥٦٧٨٩
-    "٠":"0","١":"1","٢":"2","٣":"3","٤":"4","٥":"5","٦":"6","٧":"7","٨":"8","٩":"9",
-    // Eastern-Arabic (Persian) ۰۱۲۳۴۵۶۷۸۹
-    "۰":"0","۱":"1","۲":"2","۳":"3","۴":"4","۵":"5","۶":"6","۷":"7","۸":"8","۹":"9"
-  };
-  return s.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, (d) => map[d] ?? d);
+function normalizeDigits(value: string) {
+  return value
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
 }
+
 function cleanPhone(raw: string) {
-  // إزالة مسافات بيضاء + محارف تحكّم + تحويل أرقام عربية
-  const t = normalizeDigits(raw).replace(/\s|\u200E|\u200F|\u202A|\u202B|\u202C|\u202D|\u202E/g, "");
-  // السماح بـ + في أول الرقم فقط وباقيها أرقام
-  return t.replace(/(?!^)\+/g, "").trim();
+  const cleaned = normalizeDigits(raw).replace(/\s|\u200e|\u200f|\u202a|\u202b|\u202c|\u202d|\u202e/g, "");
+  return cleaned.replace(/(?!^)\+/g, "").trim();
 }
 
 function isEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
 }
 
-// 2) Identifier schema: phone or email
 const identifierSchema = z
-  .string()
+  .string({ required_error: "validation.required" })
   .transform((v) => normalizeDigits(v).trim())
-  .refine((v) => {
-    if (!v) return false;
-    if (isEmail(v)) return true;
-    const cleaned = cleanPhone(v);
-    return /^(\+?\d{8,15})$/.test(cleaned);
-  }, { message: "invalid_identifier" })
+  .refine((v) => !!v, { message: "validation.required" })
+  .refine((v) => isEmail(v) || /^(\+?\d{8,15})$/.test(cleanPhone(v)), { message: "validation.identifier" })
   .transform((v) => (isEmail(v) ? v.toLowerCase() : cleanPhone(v)));
+
+const passwordSchema = z
+  .string({ required_error: "validation.required" })
+  .min(8, { message: "validation.password" })
+  .refine((v) => /[A-Za-z]/.test(v) && /\d/.test(v), { message: "validation.password" });
 
 const schema = z.object({
   identifier: identifierSchema,
-  password: z.string().min(4, { message: "invalid_password" }).max(128)
+  password: passwordSchema,
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -56,30 +50,35 @@ export default function SignIn() {
   const { t, i18n } = useTranslation();
   const { signIn } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation() as any;
-  const from = location.state?.from?.pathname || "/";
+  const location = useLocation();
+  const from = (location.state as { from?: Location } | undefined)?.from?.pathname || "/";
   useDirection();
 
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
-  const { register, handleSubmit, formState: { errors }, setValue } = useForm<FormValues>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    setValue,
+  } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { identifier: "", password: "" },
-    mode: "onSubmit"
+    mode: "onSubmit",
   });
+
+  const renderError = (message?: string) =>
+    message ? <p className="text-xs text-red-600 mt-1">{t(message, { defaultValue: message })}</p> : null;
 
   async function onSubmit(values: FormValues) {
     setServerError(null);
     try {
       setLoading(true);
-      // نضمن تنظيف الرقم قبل الإرسال
       const identifier = values.identifier;
       setValue("identifier", identifier, { shouldValidate: false });
 
       const res = await adminLogin(identifier, values.password);
-
-      // لو الحساب مش ADMIN نمنع الدخول
       const normalizedRole = (res.user?.role || "").toUpperCase();
       if (!["ADMIN", "STAFF"].includes(normalizedRole)) {
         setServerError(t("auth.not_admin") as string);
@@ -89,16 +88,16 @@ export default function SignIn() {
       signIn({
         accessToken: res.accessToken,
         refreshToken: res.refreshToken,
-        user: { ...res.user, role: normalizedRole }
+        user: { ...res.user, role: normalizedRole },
       });
       navigate(from, { replace: true });
-    } catch (e: any) {
-      // إظهار رسالة الخادم لو موجودة
-      const msg =
-        e?.response?.data?.message ||
-        e?.message ||
-        (i18n.language === "ar" ? "فشل تسجيل الدخول" : "Login failed");
-      setServerError(msg);
+    } catch (e: unknown) {
+      const code = getErrorCode(e);
+      if (code === "INVALID_CREDENTIALS") {
+        setServerError(t("errors.INVALID_CREDENTIALS", "Incorrect email or password"));
+      } else {
+        setServerError(getAdminErrorMessage(e, t, t("auth.login_failed", "Login failed. Check your phone and password.")));
+      }
     } finally {
       setLoading(false);
     }
@@ -117,7 +116,6 @@ export default function SignIn() {
           <h1 className="text-2xl font-bold text-center mb-1">{t("auth.sign_in_title")}</h1>
           <p className="text-sm text-center text-gray-600 mb-6">{t("auth.sign_in_subtitle")}</p>
 
-          {/* Server error (credentials/role) */}
           {serverError && (
             <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
               {serverError}
@@ -127,32 +125,31 @@ export default function SignIn() {
           <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
             <div>
               <label className="block text-sm mb-1">
-                {t("auth.identifier_label", "Phone or Email")}
+                {t("auth.identifier_label", "Phone or Email")} <span className="text-rose-500">*</span>
               </label>
               <Input
                 type="text"
                 placeholder={t("auth.identifier_placeholder", "+201234567890 or user@fasket.com") as string}
                 className={`h-11 ${i18n.language === "ar" ? "text-right" : ""}`}
+                inputMode="email"
                 {...register("identifier")}
               />
-              {errors.identifier && (
-                <p className="text-xs text-red-600 mt-1">
-                  {t("auth.invalid_identifier", "Enter a valid phone number or email")}
-                </p>
-              )}
+              {renderError(errors.identifier?.message)}
+              <p className="text-xs text-muted-foreground mt-1">{t("validation.phone")}</p>
             </div>
 
             <div>
-              <label className="block text-sm mb-1">{t("auth.password")}</label>
+              <label className="block text-sm mb-1">
+                {t("auth.password")} <span className="text-rose-500">*</span>
+              </label>
               <Input
                 type="password"
-                placeholder="••••••••"
+                placeholder="********"
                 className={`h-11 ${i18n.language === "ar" ? "text-right" : ""}`}
                 {...register("password")}
               />
-              {errors.password && (
-                <p className="text-xs text-red-600 mt-1">{t("auth.invalid_password")}</p>
-              )}
+              {renderError(errors.password?.message)}
+              <p className="text-xs text-muted-foreground mt-1">{t("validation.password")}</p>
             </div>
 
             <Button type="submit" className="w-full h-11" disabled={loading}>
@@ -166,13 +163,13 @@ export default function SignIn() {
               className="underline"
               onClick={() => i18n.changeLanguage(i18n.language === "en" ? "ar" : "en")}
             >
-              {i18n.language === "en" ? "عربي" : "EN"}
+              {i18n.language === "en" ? t("settings.arabic", "Arabic") : t("settings.english", "English")}
             </button>
           </div>
         </div>
 
         <p className="text-center text-xs text-gray-500 mt-4">
-          {t("common.app_name")} · {t("common.admin_panel")}
+          {t("common.app_name")} • {t("common.admin_panel")}
         </p>
       </div>
     </div>

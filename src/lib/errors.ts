@@ -6,15 +6,16 @@ type BackendErrorPayload = {
   code?: string;
   message?: string;
   correlationId?: string;
-  error?: string | { code?: string; message?: string };
+  error?: string | { code?: string; message?: string; details?: unknown; correlationId?: string };
   errors?: Array<{ message?: string }> | Record<string, string | string[]>;
+  details?: unknown;
 };
 
 type NormalizedErrorPayload = {
   code?: string;
   message?: string;
   correlationId?: string;
-  errors?: BackendErrorPayload["errors"];
+  errors?: BackendErrorPayload["errors"] | unknown;
 };
 
 const ERROR_CODE_TRANSLATIONS: Record<string, string> = {
@@ -34,8 +35,11 @@ const ERROR_CODE_TRANSLATIONS: Record<string, string> = {
   DEFAULT: "errors.DEFAULT",
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
 function isAxiosError(value: unknown): value is AxiosError {
-  return typeof value === "object" && value !== null && "isAxiosError" in (value as any);
+  return isRecord(value) && "isAxiosError" in value;
 }
 
 function normalizePayload(input: unknown): NormalizedErrorPayload | null {
@@ -48,14 +52,20 @@ function normalizePayload(input: unknown): NormalizedErrorPayload | null {
 
   const data = input as BackendErrorPayload;
   const nested = typeof data.error === "object" ? data.error : undefined;
-  const rawMessage = data.message ?? nested?.message ?? (typeof data.error === "string" ? data.error : undefined);
+  const rawMessage =
+    data.message ??
+    nested?.message ??
+    (typeof data.error === "string" ? data.error : undefined);
   const rawCode = data.code ?? nested?.code;
+  const details = data.details ?? nested?.details;
+  const errors =
+    data.errors ?? (isRecord(details) && "errors" in details ? details.errors : details);
 
   return {
     code: rawCode ? String(rawCode).toUpperCase() : undefined,
     message: rawMessage,
-    correlationId: data.correlationId,
-    errors: data.errors,
+    correlationId: data.correlationId ?? nested?.correlationId,
+    errors,
   };
 }
 
@@ -66,14 +76,15 @@ function extractErrorPayload(error: unknown): NormalizedErrorPayload | null {
     return normalizePayload(error.response?.data);
   }
 
-  if (typeof error === "object" && error && "response" in (error as any)) {
-    return normalizePayload((error as any).response?.data);
+  if (isRecord(error) && "response" in error) {
+    const response = (error as { response?: unknown }).response;
+    return normalizePayload((response as AxiosError["response"])?.data);
   }
 
-  if (typeof error === "object" && "message" in (error as any)) {
-    const maybeErrors = (error as any).errors;
+  if (isRecord(error) && "message" in error) {
+    const maybeErrors = error.errors;
     return {
-      message: String((error as any).message || ""),
+      message: String((error as { message?: unknown }).message || ""),
       errors: maybeErrors,
     };
   }
@@ -109,11 +120,21 @@ export function getAdminErrorMessage(error: unknown, t: TFunction, fallbackMessa
   // Always log correlationId/code for support debugging
   logErrorDetails(error);
   const payload = extractErrorPayload(error);
+  const detailList = buildErrorList(payload || error);
 
   const codeTranslation = translateErrorCode(payload?.code, t);
-  if (codeTranslation) return codeTranslation;
+  if (codeTranslation && detailList.length === 0) return codeTranslation;
 
-  if (payload?.message) return payload.message;
+  if (payload?.message) {
+    if (detailList.length) {
+      return `${payload.message}: ${detailList.join(", ")}`.trim();
+    }
+    return payload.message;
+  }
+
+  if (detailList.length) {
+    return detailList.join(", ");
+  }
 
   if (error instanceof Error && error.message) return error.message;
 
@@ -138,12 +159,18 @@ export function buildErrorList(error: unknown) {
 
   if (Array.isArray(error)) {
     return error
-      .map((item) => (typeof item === "string" ? item : (item as any)?.message || ""))
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (isRecord(item) && "message" in item && typeof item.message === "string") {
+          return item.message;
+        }
+        return "";
+      })
       .filter(Boolean);
   }
 
   const payload = extractErrorPayload(error);
-  const container = payload?.errors ?? (typeof error === "object" ? (error as any).errors : undefined);
+  const container = payload?.errors ?? (isRecord(error) ? error.errors : undefined);
 
   if (!container) return [] as string[];
 
@@ -151,10 +178,16 @@ export function buildErrorList(error: unknown) {
     return container.map((item) => item?.message).filter(Boolean) as string[];
   }
 
-  if (typeof container === "object") {
+  if (isRecord(container)) {
     return Object.values(container)
-      .map((entry) => (Array.isArray(entry) ? entry[0] : entry))
-      .map((entry) => (typeof entry === "string" ? entry : ""))
+      .flatMap((entry) => (Array.isArray(entry) ? entry : [entry]))
+      .map((entry) => {
+        if (typeof entry === "string") return entry;
+        if (isRecord(entry) && "message" in entry && typeof entry.message === "string") {
+          return entry.message;
+        }
+        return "";
+      })
       .filter(Boolean);
   }
 

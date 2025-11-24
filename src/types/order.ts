@@ -1,6 +1,6 @@
 import type { DeliveryDriver } from "./delivery";
 import type { DeliveryZone } from "./zones";
-import type { PagedResponse, PaginatedQuery, Timestamped } from "./common";
+import type { PaginatedResponse, PaginatedQuery } from "./common";
 
 export type OrderStatus = "PENDING" | "PROCESSING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "CANCELED";
 
@@ -31,24 +31,27 @@ export type OrderItem = {
   productName: string;
   quantity: number;
   unitPriceCents: number;
-  totalCents: number;
+  lineTotalCents: number;
   imageUrl?: string | null;
   sku?: string | null;
 };
 
-export type OrderSummary = Timestamped & {
+export type Order = {
   id: string;
-  code?: string;
+  code: string;
   totalCents: number;
   status: OrderStatus;
   createdAt: string;
+  updatedAt?: string;
   customer: OrderCustomer;
   driver?: DeliveryDriver | null;
-  zone?: DeliveryZone | null;
+  deliveryZone?: DeliveryZone | null;
   paymentMethod?: string | null;
 };
 
-export type OrderDetail = OrderSummary & {
+export type OrderSummary = Order;
+
+export type OrderDetail = Order & {
   items: OrderItem[];
   subtotalCents: number;
   couponDiscountCents?: number | null;
@@ -56,7 +59,7 @@ export type OrderDetail = OrderSummary & {
   shippingFeeCents?: number | null;
   address?: OrderAddress | null;
   notes?: string | null;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 };
 
 export type OrderFilters = PaginatedQuery & {
@@ -75,4 +78,67 @@ export type OrderStatusPayload = {
   actorId?: string;
 };
 
-export type OrdersPaged = PagedResponse<OrderSummary>;
+export type OrdersPaged<T = OrderSummary> = PaginatedResponse<T>;
+
+export type OrderReceiptCustomer = {
+  id: string;
+  name: string;
+  phone: string;
+};
+
+export type OrderReceiptAddress = {
+  street?: string;
+  building?: string;
+  city?: string;
+  region?: string;
+  notes?: string;
+  apartment?: string;
+  label?: string;
+  zoneId?: string | null;
+};
+
+export type OrderReceiptItem = {
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPriceCents: number;
+  lineTotalCents: number;
+};
+
+export type OrderReceiptDriver = {
+  id: string;
+  fullName: string;
+  phone: string;
+  vehicleType?: string;
+  plateNumber?: string;
+};
+
+export type OrderReceiptZone = {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  fee: number;
+  feeCents: number;
+  etaMinutes?: number;
+  isActive: boolean;
+};
+
+export type OrderReceipt = {
+  id: string;
+  code: string;
+  status: OrderStatus | string;
+  createdAt: string;
+  customer: OrderReceiptCustomer;
+  address: OrderReceiptAddress;
+  deliveryZone?: OrderReceiptZone | null;
+  driver?: OrderReceiptDriver | null;
+  items: OrderReceiptItem[];
+  subtotalCents: number;
+  couponDiscountCents: number;
+  loyaltyDiscountCents: number;
+  shippingFeeCents: number;
+  totalCents: number;
+  loyaltyPointsRedeemed?: number;
+  loyaltyPointsEarned?: number;
+  currency: string;
+};

@@ -7,12 +7,18 @@ import {
   updateDeliveryDriver,
   updateDeliveryDriverStatus,
 } from "../../services/deliveryDrivers.service";
-import type { DeliveryDriverFilters, DeliveryDriverPayload, DriverVehiclePayload } from "../../types/delivery";
+import type {
+  DeliveryDriver,
+  DeliveryDriverFilters,
+  DeliveryDriverPayload,
+  DriverVehiclePayload,
+  DriversPaged,
+} from "../../types/delivery";
 
 export const DELIVERY_DRIVERS_QUERY_KEY = ["delivery-drivers"] as const;
 
 export function useDeliveryDrivers(filters: DeliveryDriverFilters, options?: { enabled?: boolean }) {
-  return useQuery({
+  return useQuery<DriversPaged>({
     queryKey: [...DELIVERY_DRIVERS_QUERY_KEY, filters] as const,
     queryFn: () => listDeliveryDrivers(filters),
     placeholderData: keepPreviousData,
@@ -21,7 +27,7 @@ export function useDeliveryDrivers(filters: DeliveryDriverFilters, options?: { e
 }
 
 export function useDeliveryDriver(id: string | undefined, options?: { enabled?: boolean }) {
-  return useQuery({
+  return useQuery<DeliveryDriver | null>({
     queryKey: [...DELIVERY_DRIVERS_QUERY_KEY, "detail", id] as const,
     queryFn: () => (id ? getDeliveryDriver(id) : Promise.resolve(null)),
     enabled: Boolean(id) && (options?.enabled ?? true),

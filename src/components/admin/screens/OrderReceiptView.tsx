@@ -5,7 +5,7 @@ import { Button } from "../../ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../ui/table";
 import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
 import { fmtEGP } from "../../../lib/money";
-import type { OrderReceipt } from "../../../types/receipt";
+import type { OrderReceipt } from "../../../types/order";
 import { Printer, FileDown } from "lucide-react";
 
 type OrderReceiptViewProps = {
@@ -14,7 +14,8 @@ type OrderReceiptViewProps = {
 };
 
 export function OrderReceiptView({ receipt, isLoading }: OrderReceiptViewProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isRTL = i18n.dir() === "rtl";
 
   if (isLoading) {
     return <AdminTableSkeleton rows={3} columns={4} />;
@@ -25,15 +26,27 @@ export function OrderReceiptView({ receipt, isLoading }: OrderReceiptViewProps) 
   }
 
   const printReceipt = () => window.print();
+  const addressParts = [
+    receipt.address.label,
+    receipt.address.building,
+    receipt.address.street,
+    receipt.address.city,
+    receipt.address.region,
+    receipt.address.apartment,
+  ].filter(Boolean);
+  const addressLine = addressParts.join(", ");
+  const zoneLabel = receipt.deliveryZone?.nameEn || receipt.deliveryZone?.nameAr || "";
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-4" dir={i18n.dir()}>
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
-          <p className="font-semibold">{t("orders.code", "Order")} #{receipt.code}</p>
+          <p className="font-semibold">
+            {t("orders.code", "Order")} #{receipt.code}
+          </p>
           <p className="text-sm text-muted-foreground">{new Date(receipt.createdAt).toLocaleString()}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 print:hidden">
           <Button variant="outline" size="sm" onClick={printReceipt}>
             <Printer className="w-4 h-4 mr-1" />
             {t("orders.print", "Print")}
@@ -50,44 +63,50 @@ export function OrderReceiptView({ receipt, isLoading }: OrderReceiptViewProps) 
           <CardContent className="p-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span>{t("orders.customer", "Customer")}</span>
-              <span className="font-semibold">{receipt.customerName}</span>
+              <span className="font-semibold">{receipt.customer.name}</span>
             </div>
             <div className="flex justify-between">
               <span>{t("orders.phone", "Phone")}</span>
-              <span>{receipt.customerPhone}</span>
+              <span>{receipt.customer.phone}</span>
             </div>
             <div className="flex justify-between">
               <span>{t("orders.address", "Address")}</span>
-              <span className="text-right">{receipt.address}</span>
+              <span className={isRTL ? "text-left" : "text-right"}>{addressLine}</span>
             </div>
-            {receipt.zone?.name && (
+            {zoneLabel && (
               <div className="flex justify-between">
                 <span>{t("orders.zone", "Zone")}</span>
-                <span>{receipt.zone.name}</span>
+                <span>{zoneLabel}</span>
               </div>
             )}
             {receipt.driver?.fullName && (
-              <div className="flex justify-between">
-                <span>{t("orders.driver", "Driver")}</span>
-                <span>{receipt.driver.fullName}</span>
-              </div>
-            )}
-            {receipt.loyalty && (
               <>
-                {receipt.loyalty.usedPoints != null && (
+                <div className="flex justify-between">
+                  <span>{t("orders.driver", "Driver")}</span>
+                  <span>{receipt.driver.fullName}</span>
+                </div>
+                {receipt.driver.phone && (
                   <div className="flex justify-between">
-                    <span>{t("orders.loyaltyUsed", "Loyalty used")}</span>
-                    <span>{receipt.loyalty.usedPoints}</span>
+                    <span>{t("orders.phone", "Phone")}</span>
+                    <span>{receipt.driver.phone}</span>
                   </div>
                 )}
-                {receipt.loyalty.earnedPoints != null && (
+                {(receipt.driver.vehicleType || receipt.driver.plateNumber) && (
                   <div className="flex justify-between">
-                    <span>{t("orders.loyaltyEarned", "Loyalty earned")}</span>
-                    <span>{receipt.loyalty.earnedPoints}</span>
+                    <span>{t("orders.vehicle", "Vehicle")}</span>
+                    <span>{[receipt.driver.vehicleType, receipt.driver.plateNumber].filter(Boolean).join(" / ")}</span>
                   </div>
                 )}
               </>
             )}
+            <div className="flex justify-between">
+              <span>{t("orders.loyaltyUsed", "Loyalty used")}</span>
+              <span>{receipt.loyaltyPointsRedeemed ?? 0}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>{t("orders.loyaltyEarned", "Loyalty earned")}</span>
+              <span>{receipt.loyaltyPointsEarned ?? 0}</span>
+            </div>
           </CardContent>
         </Card>
 
@@ -124,7 +143,7 @@ export function OrderReceiptView({ receipt, isLoading }: OrderReceiptViewProps) 
       </div>
 
       <div className="overflow-auto border rounded-lg">
-        <Table>
+        <Table dir={i18n.dir()}>
           <TableHeader>
             <TableRow>
               <TableHead>{t("orders.item", "Item")}</TableHead>
@@ -135,11 +154,11 @@ export function OrderReceiptView({ receipt, isLoading }: OrderReceiptViewProps) 
           </TableHeader>
           <TableBody>
             {receipt.items.map((item) => (
-              <TableRow key={item.id || item.productId || item.productName}>
+              <TableRow key={item.productId || item.productName}>
                 <TableCell className="font-medium">{item.productName}</TableCell>
                 <TableCell>{item.quantity}</TableCell>
                 <TableCell>{fmtEGP(item.unitPriceCents)}</TableCell>
-                <TableCell className="text-right">{fmtEGP(item.totalCents)}</TableCell>
+                <TableCell className="text-right">{fmtEGP(item.lineTotalCents)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

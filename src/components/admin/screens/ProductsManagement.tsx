@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useForm, Controller, type Resolver } from "react-hook-form";
+import { useForm, Controller, type FieldError, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -14,6 +14,7 @@ import {
   downloadProductsBulkTemplate,
   uploadProductsBulk,
 } from "../../../services/products.service";
+import { uploadAdminFile } from "../../../services/uploads.service";
 import { type Category } from "../../../services/categories.service";
 import { toCents, fromCents } from "../../../lib/money";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
@@ -76,28 +77,50 @@ import { ErrorState } from "../../admin/common/ErrorState";
 import { getAdminErrorMessage } from "../../../lib/errors";
 import type { ScreenProps } from "../../admin/AdminDashboard";
 
-const MAX_FILE_MB = 10;
+const MAX_FILE_MB = 2;
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 const DEFAULT_PAGE_SIZE = 20;
 
-const productFormSchema = z.object({
-  name: z.string().min(2, "Name is required"),
-  nameAr: z.string().optional(),
-  slug: z
-    .string()
-    .min(2, "Slug is required")
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use lowercase letters, numbers, and hyphen only"),
-  description: z.string().optional(),
-  descriptionAr: z.string().optional(),
-  categoryId: z.string().min(1, "Select a category"),
-  price: z.string().min(1, "Price is required"),
-  salePrice: z.string().optional(),
-  stock: z.string().min(1, "Stock is required"),
-  status: z.enum(["DRAFT", "ACTIVE", "HIDDEN", "DISCONTINUED"]),
-  isHotOffer: z.boolean().default(false),
-  images: z.array(z.string().min(1)).default([]),
-  mainImage: z.string().optional(),
-});
+const productFormSchema = z
+  .object({
+    name: z.string().trim().min(1, "validation.required"),
+    nameAr: z.string().optional(),
+    slug: z
+      .string()
+      .trim()
+      .min(2, "validation.required")
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "products.invalid_slug"),
+    description: z.string().optional(),
+    descriptionAr: z.string().optional(),
+    categoryId: z.string().trim().min(1, "validation.required"),
+    price: z.string().trim().min(1, "validation.required"),
+    salePrice: z.string().trim().optional(),
+    stock: z.string().trim().min(1, "validation.required"),
+    status: z.enum(["DRAFT", "ACTIVE", "HIDDEN", "DISCONTINUED"]),
+    isHotOffer: z.boolean().default(false),
+    images: z.array(z.string().min(1)).default([]),
+    mainImage: z.string().optional(),
+  })
+  .superRefine((val, ctx) => {
+    const priceValue = parseCurrency(val.price);
+    if (!Number.isFinite(priceValue) || priceValue <= 0) {
+      ctx.addIssue({ code: "custom", path: ["price"], message: "products.invalid_price_positive" });
+    }
+
+    if (val.salePrice) {
+      const saleValue = parseCurrency(val.salePrice);
+      if (!Number.isFinite(saleValue) || saleValue <= 0) {
+        ctx.addIssue({ code: "custom", path: ["salePrice"], message: "products.invalid_sale_price" });
+      } else if (Number.isFinite(priceValue) && saleValue >= priceValue) {
+        ctx.addIssue({ code: "custom", path: ["salePrice"], message: "products.invalid_sale_price" });
+      }
+    }
+
+    const stockValue = Number.parseInt(sanitizeIntegerInput(val.stock), 10);
+    if (!Number.isFinite(stockValue) || stockValue < 0) {
+      ctx.addIssue({ code: "custom", path: ["stock"], message: "products.invalid_stock" });
+    }
+  });
 
 type ProductFormValues = z.infer<typeof productFormSchema>;
 type DrawerState = { mode: "create" | "edit"; product?: Product } | null;
@@ -305,6 +328,8 @@ function calcDiscount(price: string, salePrice: string) {
 export function ProductsManagement(props?: Partial<ScreenProps>) {
   const { adminState, updateAdminState } = props || {};
   const { t, i18n } = useTranslation();
+  const isRTL = i18n.dir() === "rtl";
+  const isArabic = i18n.language?.startsWith("ar");
   const { isAdmin } = useAuth();
   const queryClient = useQueryClient();
 
@@ -344,9 +369,11 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
 
   const categoryLookup = useMemo(() => {
     const map = new Map<string, string>();
-    (categoriesQuery.data?.items || []).forEach((category) => map.set(category.id, category.name));
+    (categoriesQuery.data?.items || []).forEach((category) =>
+      map.set(category.id, isArabic && category.nameAr ? category.nameAr : category.name)
+    );
     return map;
-  }, [categoriesQuery.data?.items]);
+  }, [categoriesQuery.data?.items, isArabic]);
 
   const tableItems = useMemo(() => {
     const data = productsQuery.data?.items || [];
@@ -413,10 +440,20 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
             : basePayload.salePriceCents;
       }
 
-      if (payload.id) {
-        return updateProduct(payload.id, basePayload, payload.imageFile);
+      if (payload.imageFile) {
+        const { url } = await uploadAdminFile(payload.imageFile);
+        basePayload.imageUrl = url;
+        if (!basePayload.images?.length) {
+          basePayload.images = [url];
+        } else if (!basePayload.images.includes(url)) {
+          basePayload.images = [url, ...basePayload.images];
+        }
       }
-      return createProduct(basePayload, payload.imageFile);
+
+      if (payload.id) {
+        return updateProduct(payload.id, basePayload, null);
+      }
+      return createProduct(basePayload, null);
     },
     onSuccess: (_, variables) => {
       toast.success(
@@ -479,6 +516,9 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
     searchInput,
     filters.categoryId !== "all" ? categoryLookup.get(filters.categoryId) : undefined
   );
+  const primaryAlignClass = isRTL ? "text-right" : "";
+  const endAlignClass = isRTL ? "text-left" : "text-right";
+  const sortHeaderClass = isRTL ? "flex-row-reverse" : "";
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -552,7 +592,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
                   <SelectItem value="all">{t("common.all")}</SelectItem>
                   {(categoriesQuery.data?.items || []).map((category) => (
                     <SelectItem key={category.id} value={category.id}>
-                      {category.name}
+                      {isArabic && category.nameAr ? category.nameAr : category.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -682,49 +722,56 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
           ) : productsQuery.isError ? (
             <div className="p-6">
               <ErrorState
-                message={t("app.table.error", "Unable to load products right now")}
+                message={getAdminErrorMessage(productsQuery.error, t, t("app.table.error", "Unable to load products right now"))}
                 onRetry={() => productsQuery.refetch()}
               />
             </div>
           ) : tableItems.length ? (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" dir={i18n.dir()}>
               <div ref={productListParentRef} className="max-h-[70vh] overflow-auto">
-                <Table>
+                <Table dir={i18n.dir()} className={isRTL ? "text-right" : ""}>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="cursor-pointer" onClick={() => handleSort("name")}>
-                      <div className="flex items-center gap-1">
+                    <TableHead className={`cursor-pointer ${primaryAlignClass}`} onClick={() => handleSort("name")}>
+                      <div className={`flex items-center gap-1 ${sortHeaderClass}`}>
                         {t("products.product")}
                         <ArrowUpDown className={sortIconClass("name")} />
                       </div>
                     </TableHead>
-                    <TableHead>{t("products.category")}</TableHead>
-                    <TableHead className="cursor-pointer" onClick={() => handleSort("createdAt")}>
-                      <div className="flex items-center gap-1">
+                    <TableHead className={primaryAlignClass}>{t("products.category")}</TableHead>
+                    <TableHead className={`cursor-pointer ${primaryAlignClass}`} onClick={() => handleSort("createdAt")}>
+                      <div className={`flex items-center gap-1 ${sortHeaderClass}`}>
                         {t("products.createdAt", "Created")}
                         <ArrowUpDown className={sortIconClass("createdAt")} />
                       </div>
                     </TableHead>
-                    <TableHead className="cursor-pointer" onClick={() => handleSort("priceCents")}>
-                      <div className="flex items-center gap-1">
+                    <TableHead className={`cursor-pointer ${primaryAlignClass}`} onClick={() => handleSort("priceCents")}>
+                      <div className={`flex items-center gap-1 ${sortHeaderClass}`}>
                         {t("products.price")}
                         <ArrowUpDown className={sortIconClass("priceCents")} />
                       </div>
                     </TableHead>
-                    <TableHead className="cursor-pointer" onClick={() => handleSort("stock")}>
-                      <div className="flex items-center gap-1">
+                    <TableHead className={`cursor-pointer ${primaryAlignClass}`} onClick={() => handleSort("stock")}>
+                      <div className={`flex items-center gap-1 ${sortHeaderClass}`}>
                         {t("products.stock")}
                         <ArrowUpDown className={sortIconClass("stock")} />
                       </div>
                     </TableHead>
-                    <TableHead>{t("products.status")}</TableHead>
-                    <TableHead>{t("products.hotOffer", "Hot offer")}</TableHead>
-                    <TableHead className="text-right">{t("app.actions.actions")}</TableHead>
+                    <TableHead className={primaryAlignClass}>{t("products.status")}</TableHead>
+                    <TableHead className={primaryAlignClass}>{t("products.hotOffer", "Hot offer")}</TableHead>
+                    <TableHead className={endAlignClass}>{t("app.actions.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody style={{ position: "relative", height: productVirtualizer.getTotalSize() }}>
                   {productVirtualizer.getVirtualItems().map((virtualRow) => {
                     const product = tableItems[virtualRow.index];
+                    const primaryName = isArabic && product.nameAr?.trim() ? product.nameAr : product.name;
+                    const secondaryName =
+                      isArabic && product.name !== primaryName
+                        ? product.name
+                        : !isArabic && product.nameAr?.trim()
+                        ? product.nameAr
+                        : product.slug;
                     return (
                       <TableRow
                         key={product.id}
@@ -736,8 +783,8 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
                           transform: `translateY(${virtualRow.start}px)`,
                         }}
                       >
-                      <TableCell>
-                        <div className="flex gap-3">
+                      <TableCell className={primaryAlignClass}>
+                        <div className={`flex gap-3 ${isRTL ? "flex-row-reverse text-right" : ""}`}>
                           <div className="w-14 h-14 rounded-md overflow-hidden bg-muted">
                             {product.imageUrl ? (
                               <ImageWithFallback src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
@@ -747,16 +794,16 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
                               </div>
                             )}
                           </div>
-                          <div>
-                            <p className="font-medium text-sm">{product.name}</p>
-                            <p className="text-xs text-muted-foreground">{product.slug}</p>
+                          <div className="space-y-0.5">
+                            <p className="font-medium text-sm">{primaryName}</p>
+                            <p className="text-xs text-muted-foreground max-w-[220px] truncate">{secondaryName}</p>
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell>{categoryLookup.get(product.categoryId) || "--"}</TableCell>
-                      <TableCell>{formatDate(product.createdAt, i18n.language)}</TableCell>
-                      <TableCell>{formatPrice(product.priceCents, i18n.language)}</TableCell>
-                      <TableCell>
+                      <TableCell className={primaryAlignClass}>{categoryLookup.get(product.categoryId) || "--"}</TableCell>
+                      <TableCell className={primaryAlignClass}>{formatDate(product.createdAt, i18n.language)}</TableCell>
+                      <TableCell className={primaryAlignClass}>{formatPrice(product.priceCents, i18n.language)}</TableCell>
+                      <TableCell className={primaryAlignClass}>
                         <Badge className={stockClass(product.stock)}>
                           {product.stock === 0
                             ? t("products.stockFilters.out", "Out of stock")
@@ -766,10 +813,10 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
                           ({product.stock})
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className={primaryAlignClass}>
                         <Badge className={statusStyles[product.status]}>{t(`products.statuses.${product.status}`)}</Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className={primaryAlignClass}>
                         {product.isHotOffer ? (
                           <Badge className="bg-amber-100 text-amber-700 gap-1">
                             <Flame className="w-3 h-3" />
@@ -779,8 +826,8 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
                           <span className="text-xs text-muted-foreground">--</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                      <TableCell className={endAlignClass}>
+                        <div className={`flex ${isRTL ? "justify-start" : "justify-end"} gap-2`}>
                           <Button size="icon" variant="ghost" onClick={() => setDrawerState({ mode: "edit", product })}>
                             <Edit className="w-4 h-4" />
                           </Button>
@@ -957,6 +1004,11 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
     resolver: zodResolver(productFormSchema) as Resolver<ProductFormValues>,
     defaultValues: initialValues,
   });
+  const requiredMark = <span className="text-rose-500">*</span>;
+  const renderError = (error?: FieldError) =>
+    error?.message ? (
+      <p className="text-xs text-rose-600 mt-1">{t(error.message as string, { defaultValue: error.message as string })}</p>
+    ) : null;
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const slugEdited = useRef(false);
@@ -1007,18 +1059,20 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div className="space-y-4">
           <div>
-            <Label>{t("products.name")}</Label>
+            <Label>
+              {t("products.name")} {requiredMark}
+            </Label>
             <Input {...form.register("name")} placeholder={t("products.name") || ""} />
-            {form.formState.errors.name && (
-              <p className="text-xs text-rose-600 mt-1">{form.formState.errors.name.message}</p>
-            )}
+            {renderError(form.formState.errors.name as FieldError)}
           </div>
           <div>
             <Label>{t("products.nameAr", "Arabic name")}</Label>
             <Input {...form.register("nameAr")} placeholder={t("products.nameAr") || ""} />
           </div>
           <div>
-            <Label>{t("products.slug")}</Label>
+            <Label>
+              {t("products.slug")} {requiredMark}
+            </Label>
             <Input
               {...form.register("slug")}
               onFocus={() => (slugEdited.current = true)}
@@ -1028,12 +1082,12 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
               }}
               placeholder="fresh-fruits"
             />
-            {form.formState.errors.slug && (
-              <p className="text-xs text-rose-600 mt-1">{form.formState.errors.slug.message}</p>
-            )}
+            {renderError(form.formState.errors.slug as FieldError)}
           </div>
           <div>
-            <Label>{t("products.category")}</Label>
+            <Label>
+              {t("products.category")} {requiredMark}
+            </Label>
             <Select value={form.watch("categoryId")} onValueChange={(value) => form.setValue("categoryId", value)}>
               <SelectTrigger>
                 <SelectValue placeholder={t("products.category")} />
@@ -1046,9 +1100,7 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
                 ))}
               </SelectContent>
             </Select>
-            {form.formState.errors.categoryId && (
-              <p className="text-xs text-rose-600 mt-1">{form.formState.errors.categoryId.message}</p>
-            )}
+            {renderError(form.formState.errors.categoryId as FieldError)}
           </div>
           <div>
             <Label>{t("products.description")}</Label>
@@ -1074,7 +1126,9 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
               name="price"
               render={({ field }) => (
                 <div>
-                  <Label>{t("products.price")}</Label>
+                  <Label>
+                    {t("products.price")} {requiredMark}
+                  </Label>
                   <Input
                     {...field}
                     inputMode="decimal"
@@ -1082,9 +1136,7 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
                     placeholder="0.00"
                     disabled={!canEditPrice}
                   />
-                  {form.formState.errors.price && (
-                    <p className="text-xs text-rose-600 mt-1">{form.formState.errors.price.message}</p>
-                  )}
+                  {renderError(form.formState.errors.price as FieldError)}
                   {!canEditPrice && (
                     <p className="text-xs text-muted-foreground mt-1">
                       {t("products.price_locked", "Only admins can update prices")}
@@ -1106,6 +1158,7 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
                     placeholder="0.00"
                     disabled={!canEditPrice}
                   />
+                  {renderError(form.formState.errors.salePrice as FieldError)}
                 </div>
               )}
             />
@@ -1121,16 +1174,16 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
             name="stock"
             render={({ field }) => (
               <div>
-                <Label>{t("products.stock")}</Label>
+                <Label>
+                  {t("products.stock")} {requiredMark}
+                </Label>
                 <Input
                   {...field}
                   inputMode="numeric"
                   onChange={(event) => field.onChange(sanitizeIntegerInput(event.target.value))}
                   placeholder="0"
                 />
-                {form.formState.errors.stock && (
-                  <p className="text-xs text-rose-600 mt-1">{form.formState.errors.stock.message}</p>
-                )}
+                {renderError(form.formState.errors.stock as FieldError)}
               </div>
             )}
           />

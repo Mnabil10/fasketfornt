@@ -8,17 +8,75 @@ import type {
   SettingsResponse,
   SystemSettings,
 } from "../types/settings";
+import type { DeliveryZone } from "../types/zones";
 
-const SETTINGS_BASE = "/admin/settings";
+const SETTINGS_BASE = "/api/v1/admin/settings";
+
+type DeliveryZoneDto = {
+  id: string;
+  nameEn?: string;
+  nameAr?: string;
+  fee?: number;
+  feeCents?: number;
+  etaMinutes?: number | null;
+  isActive?: boolean;
+  city?: string | null;
+  region?: string | null;
+  freeDeliveryThresholdCents?: number | null;
+  minOrderAmountCents?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+function normalizeDeliveryZone(dto: DeliveryZoneDto): DeliveryZone {
+  const feeCents = dto.feeCents ?? (dto.fee != null ? Math.round(dto.fee * 100) : 0);
+  const fee = dto.fee ?? feeCents / 100;
+  return {
+    id: dto.id,
+    nameEn: dto.nameEn ?? "",
+    nameAr: dto.nameAr ?? "",
+    fee,
+    feeCents,
+    etaMinutes: dto.etaMinutes ?? null,
+    isActive: dto.isActive ?? true,
+    city: dto.city ?? null,
+    region: dto.region ?? null,
+    freeDeliveryThresholdCents: dto.freeDeliveryThresholdCents ?? null,
+    minOrderAmountCents: dto.minOrderAmountCents ?? null,
+    createdAt: dto.createdAt,
+    updatedAt: dto.updatedAt,
+  };
+}
+
+function normalizeDeliverySettings(delivery?: DeliverySettings & { deliveryZones?: DeliveryZoneDto[] }): DeliverySettings {
+  const zones = Array.isArray(delivery?.deliveryZones)
+    ? delivery?.deliveryZones.map((zone) => normalizeDeliveryZone(zone))
+    : undefined;
+
+  return {
+    deliveryFee: delivery?.deliveryFee,
+    deliveryFeeCents: delivery?.deliveryFeeCents ?? (delivery?.deliveryFee != null ? Math.round(delivery.deliveryFee * 100) : undefined),
+    freeDeliveryMinimum: delivery?.freeDeliveryMinimum,
+    freeDeliveryMinimumCents:
+      delivery?.freeDeliveryMinimumCents ??
+      (delivery?.freeDeliveryMinimum != null ? Math.round(delivery.freeDeliveryMinimum * 100) : undefined),
+    estimatedDeliveryTime: delivery?.estimatedDeliveryTime ?? null,
+    maxDeliveryRadius: delivery?.maxDeliveryRadius ?? null,
+    deliveryZones: zones,
+  };
+}
 
 export async function getSettings() {
   const { data } = await api.get<SettingsResponse>(SETTINGS_BASE);
-  return data;
+  return {
+    ...data,
+    delivery: normalizeDeliverySettings(data.delivery),
+  };
 }
 
 export async function getDeliverySettings() {
   const { data } = await api.get<DeliverySettings>(`${SETTINGS_BASE}/delivery`);
-  return data;
+  return normalizeDeliverySettings(data);
 }
 
 export async function updateSettingsSection<T extends keyof SettingsPayload>(section: T, payload: SettingsPayload[T]) {

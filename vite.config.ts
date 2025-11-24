@@ -5,7 +5,6 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: { host: true, port: 5174 },
-    define: { __API_BASE__: JSON.stringify(env.VITE_API_BASE || 'http://localhost:3000') },
     build: {
       chunkSizeWarningLimit: 1200,
       rollupOptions: {
