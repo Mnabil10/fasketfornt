@@ -52,14 +52,23 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
 
   const debouncedCustomer = useDebounce(filters.customer || "", 300);
   const debouncedDriverSearch = useDebounce(driverSearch, 300);
+  const customerTerm = useMemo(() => {
+    const trimmed = debouncedCustomer?.trim();
+    if (!trimmed) return undefined;
+    // backend validation fails on very short search strings; require 3+ chars
+    return trimmed.length < 3 ? undefined : trimmed;
+  }, [debouncedCustomer]);
   const mergedFilters = useMemo(
     () => ({
-      ...filters,
+      status: filters.status,
+      from: filters.from,
+      to: filters.to,
+      driverId: filters.driverId,
+      customer: customerTerm,
       page,
       pageSize,
-      customer: debouncedCustomer || undefined,
     }),
-    [filters, debouncedCustomer, page, pageSize]
+    [filters.driverId, filters.from, filters.status, filters.to, customerTerm, page, pageSize]
   );
 
   const ordersQuery = useOrdersAdmin(mergedFilters);
@@ -186,7 +195,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
 
   return (
     <div className="p-4 lg:p-6 space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">{t("orders.title", "Orders")}</h1>
           <p className="text-muted-foreground">{t("orders.subtitle", "Track and manage customer orders")}</p>
@@ -258,7 +267,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" onClick={resetFilters}>
+            <Button variant="outline" className="w-full md:w-auto" onClick={resetFilters}>
               {t("common.resetFilters", "Reset filters")}
             </Button>
           </div>
@@ -267,7 +276,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
 
       <Card>
         <CardContent className="p-0">
-          <div className="grid grid-cols-[1.2fr,1fr,1fr,1fr,0.8fr,0.8fr] text-xs font-medium text-muted-foreground px-4 py-2 border-b">
+          <div className="hidden md:grid grid-cols-[1.2fr,1fr,1fr,1fr,0.8fr,0.8fr] text-xs font-medium text-muted-foreground px-4 py-2 border-b">
             <span>{t("orders.code", "Code")}</span>
             <span>{t("orders.customer", "Customer")}</span>
             <span>{t("orders.createdAt", "Created")}</span>
@@ -285,54 +294,95 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
               onRetry={() => ordersQuery.refetch()}
             />
           ) : items.length === 0 ? (
-            <EmptyState
-              title={t("orders.empty", "No orders found")}
-              description={t("orders.emptyDesc", "Try changing the filters")}
-            />
+            <div className="p-4">
+              <EmptyState
+                title={t("orders.empty", "No orders found")}
+                description={t("orders.emptyDesc", "Try changing the filters")}
+              />
+            </div>
           ) : (
             <>
-              <div ref={parentRef} style={{ height: "60vh", overflow: "auto", position: "relative" }}>
-                <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
-                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                    const order = items[virtualRow.index];
-                    const meta = statusBadge(order.status);
-                    return (
-                      <div
-                        key={order.id}
-                        className="grid grid-cols-[1.2fr,1fr,1fr,1fr,0.8fr,0.8fr] px-4 py-3 border-b hover:bg-muted/60 cursor-pointer"
-                        style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${virtualRow.start}px)` }}
-                        onClick={() => openDetail(order.id)}
-                      >
-                        <div className="font-semibold">{order.code || order.id}</div>
-                        <div className="space-y-0.5">
-                          <p className="font-medium">{order.customer?.name}</p>
-                          <p className="text-xs text-muted-foreground">{order.customer?.phone}</p>
+              <div className="hidden md:block">
+                <div ref={parentRef} style={{ height: "60vh", overflow: "auto", position: "relative" }}>
+                  <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
+                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const order = items[virtualRow.index];
+                      const meta = statusBadge(order.status);
+                      return (
+                        <div
+                          key={order.id}
+                          className="grid grid-cols-[1.2fr,1fr,1fr,1fr,0.8fr,0.8fr] px-4 py-3 border-b hover:bg-muted/60 cursor-pointer"
+                          style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${virtualRow.start}px)` }}
+                          onClick={() => openDetail(order.id)}
+                        >
+                          <div className="font-semibold">{order.code || order.id}</div>
+                          <div className="space-y-0.5">
+                            <p className="font-medium">{order.customer?.name}</p>
+                            <p className="text-xs text-muted-foreground">{order.customer?.phone}</p>
+                          </div>
+                          <div className="text-sm text-muted-foreground">{dayjs(order.createdAt).format("DD MMM HH:mm")}</div>
+                          <div className="font-semibold">{fmtEGP(order.totalCents)}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {order.driver?.fullName ? (
+                              <span className="inline-flex items-center gap-1">
+                                <Truck className="w-4 h-4" />
+                                {order.driver.fullName}
+                              </span>
+                            ) : (
+                              "-"
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <Badge className={meta.color}>{meta.label}</Badge>
+                          </div>
                         </div>
-                        <div className="text-sm text-muted-foreground">{dayjs(order.createdAt).format("DD MMM HH:mm")}</div>
-                        <div className="font-semibold">{fmtEGP(order.totalCents)}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {order.driver?.fullName ? (
-                            <span className="inline-flex items-center gap-1">
-                              <Truck className="w-4 h-4" />
-                              {order.driver.fullName}
-                            </span>
-                          ) : (
-                            "-"
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <Badge className={meta.color}>{meta.label}</Badge>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
+              <div className="md:hidden space-y-3 p-4">
+                {items.map((order) => {
+                  const meta = statusBadge(order.status);
+                  return (
+                    <div
+                      key={order.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openDetail(order.id)}
+                      onKeyDown={(event) => event.key === "Enter" && openDetail(order.id)}
+                      className="rounded-lg border bg-card shadow-sm p-3 focus:outline-none focus:ring-2 focus:ring-primary/60"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold">#{order.code || order.id}</p>
+                          <p className="text-xs text-muted-foreground">{dayjs(order.createdAt).format("DD MMM HH:mm")}</p>
+                        </div>
+                        <Badge className={meta.color}>{meta.label}</Badge>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <p className="text-muted-foreground">{t("orders.customer")}</p>
+                          <p className="font-medium">{order.customer?.name || "-"}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-muted-foreground">{t("orders.amount")}</p>
+                          <p className="font-semibold">{fmtEGP(order.totalCents)}</p>
+                        </div>
+                        <div className="col-span-2 flex items-center gap-2 text-xs text-muted-foreground">
+                          <Truck className="w-4 h-4" />
+                          <span>{order.driver?.fullName || t("orders.driver", "Driver")} {order.driver?.phone ? `• ${order.driver.phone}` : ""}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t text-sm text-muted-foreground">
                 <div>
                   {t("common.pagination", { defaultValue: "Page {{page}} of {{count}}", page, count: pageCount })}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 sm:justify-end">
                   <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                     {t("common.prev", "Prev")}
                   </Button>
@@ -347,7 +397,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
       </Card>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="max-w-5xl w-[95vw]">
           <DialogHeader>
             <DialogTitle>{t("orders.detail", "Order details")}</DialogTitle>
           </DialogHeader>
@@ -481,7 +531,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
       </Dialog>
 
       <Dialog open={receiptOpen} onOpenChange={setReceiptOpen}>
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="max-w-5xl w-[95vw]">
           <DialogHeader>
             <DialogTitle>{t("orders.receipt", "Receipt")}</DialogTitle>
           </DialogHeader>

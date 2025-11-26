@@ -352,7 +352,7 @@ export function AdminDashboard() {
         <div className="flex-1 flex flex-col min-w-0">
           {/* Top Bar */}
           <div className="bg-card text-card-foreground border-b border-border px-4 lg:px-6 py-4 shadow-sm">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-3 min-w-0">
                 {/* Mobile Menu Button */}
                 <Button
@@ -370,9 +370,9 @@ export function AdminDashboard() {
               </div>
 
               <div
-                className={`flex items-center ${
+                className={`flex flex-wrap items-center ${
                   i18n.language === "ar" ? "gap-2" : "gap-2"
-                } lg:gap-4`}
+                } lg:gap-4 md:justify-end`}
               >
                 {/* Search */}
                 <div className="relative hidden md:block">

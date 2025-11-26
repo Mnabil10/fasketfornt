@@ -63,9 +63,9 @@ export function HotOffersList() {
               </TableBody>
             </Table>
           </div>
-          <div className="flex items-center justify-between text-sm text-gray-600">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-gray-600">
             <span>{t('app.table.total') || 'Total'}: {total}</span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 sm:justify-end">
               <button className="px-3 py-1 border rounded" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
               <span>{t('app.table.page') || 'Page'} {page} / {Math.max(1, Math.ceil(total / pageSize))}</span>
               <button className="px-3 py-1 border rounded" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage((p) => p + 1)}>Next</button>

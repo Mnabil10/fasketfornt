@@ -66,12 +66,39 @@ function normalizeDeliverySettings(delivery?: DeliverySettings & { deliveryZones
   };
 }
 
-export async function getSettings() {
-  const { data } = await api.get<SettingsResponse>(SETTINGS_BASE);
+function mapSettingsFromApi(data: SettingsResponse & { payment?: PaymentSettings }) {
+  const loyalty =
+    data.loyalty && typeof data.loyalty === "object"
+      ? {
+          ...data.loyalty,
+          enabled:
+            (data.loyalty as any).enabled ??
+            (data.loyalty as any).loyaltyEnabled ??
+            (data.loyalty as any).enabled === undefined
+              ? (data.loyalty as any).loyaltyEnabled
+              : (data.loyalty as any).enabled,
+          loyaltyEnabled:
+            (data.loyalty as any).loyaltyEnabled ?? (data.loyalty as any).enabled,
+        }
+      : data.loyalty;
+
   return {
     ...data,
+    payments: (data as any).payments ?? data.payment,
+    loyalty,
     delivery: normalizeDeliverySettings(data.delivery),
   };
+}
+
+function mapSectionToApi(section: keyof SettingsPayload): string {
+  if (section === "payments") return "payment";
+  if (section === "payment") return "payment";
+  return section;
+}
+
+export async function getSettings() {
+  const { data } = await api.get<SettingsResponse & { payment?: PaymentSettings }>(SETTINGS_BASE);
+  return mapSettingsFromApi(data);
 }
 
 export async function getDeliverySettings() {
@@ -79,9 +106,15 @@ export async function getDeliverySettings() {
   return normalizeDeliverySettings(data);
 }
 
+export async function updateSettings(payload: SettingsPayload) {
+  const { data } = await api.patch<SettingsResponse>(SETTINGS_BASE, payload);
+  return mapSettingsFromApi(data as SettingsResponse & { payment?: PaymentSettings });
+}
+
 export async function updateSettingsSection<T extends keyof SettingsPayload>(section: T, payload: SettingsPayload[T]) {
-  const { data } = await api.patch<SettingsResponse>(`${SETTINGS_BASE}/${section}`, payload);
-  return data;
+  const apiSection = mapSectionToApi(section);
+  const { data } = await api.patch<SettingsResponse>(`${SETTINGS_BASE}/${apiSection}`, payload);
+  return mapSettingsFromApi(data as SettingsResponse & { payment?: PaymentSettings });
 }
 
 export async function updateGeneralSettings(payload: GeneralSettings) {
@@ -93,7 +126,7 @@ export async function updateDeliverySettings(payload: DeliverySettings) {
 }
 
 export async function updatePaymentSettings(payload: PaymentSettings) {
-  return updateSettingsSection("payments", payload);
+  return updateSettingsSection("payment", payload);
 }
 
 export async function updateNotificationSettings(payload: NotificationsSettings) {
@@ -102,4 +135,8 @@ export async function updateNotificationSettings(payload: NotificationsSettings)
 
 export async function updateSystemSettings(payload: SystemSettings) {
   return updateSettingsSection("system", payload);
+}
+
+export async function updateLoyaltySettings(payload: SettingsPayload["loyalty"]) {
+  return updateSettingsSection("loyalty", payload);
 }

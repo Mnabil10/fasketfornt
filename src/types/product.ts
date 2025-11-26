@@ -28,7 +28,7 @@ export type ProductFilters = PaginatedQuery & {
   maxPriceCents?: number;
   inStock?: boolean;
   isHotOffer?: boolean;
-  orderBy?: "createdAt" | "priceCents" | "name" | "stock";
+  orderBy?: "createdAt" | "priceCents" | "name";
   sort?: "asc" | "desc";
 };
 

@@ -260,7 +260,7 @@ export function CategoriesManagement() {
 
       <Card>
         <CardContent className="p-4 space-y-4">
-          <div className="relative max-w-lg">
+          <div className="relative w-full max-w-lg">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={searchInput}
@@ -273,7 +273,7 @@ export function CategoriesManagement() {
             />
           </div>
 
-          <div className="border rounded-lg">
+          <div className="border rounded-lg overflow-hidden">
             {categoriesQuery.isLoading ? (
               <div className="p-4">
                 <AdminTableSkeleton rows={5} columns={8} />
@@ -298,98 +298,100 @@ export function CategoriesManagement() {
                 />
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12"></TableHead>
-                    <TableHead>{t("categories.name")}</TableHead>
-                    <TableHead>{t("categories.nameAr", "Arabic Name")}</TableHead>
-                    <TableHead>{t("categories.slug")}</TableHead>
-                    <TableHead>{t("categories.parent")}</TableHead>
-                    <TableHead>{t("categories.sortOrder")}</TableHead>
-                    <TableHead>{t("categories.active")}</TableHead>
-                    <TableHead className="text-right">{t("app.actions.actions")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((category) => (
-                    <TableRow
-                      key={category.id}
-                      draggable
-                      onDragStart={() => setDraggingId(category.id)}
-                      onDragOver={(event) => event.preventDefault()}
-                      onDrop={() => handleReorder(category.id)}
-                      onDragEnd={() => setDraggingId(null)}
-                    >
-                      <TableCell className="text-muted-foreground">
-                        <GripVertical className="w-4 h-4" />
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-md overflow-hidden bg-muted">
-                            {category.imageUrl ? (
-                              <ImageWithFallback src={category.imageUrl} alt={category.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                                <ImageIcon className="w-4 h-4" />
-                              </div>
+              <div className="overflow-x-auto">
+                <Table className="min-w-[900px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12"></TableHead>
+                      <TableHead>{t("categories.name")}</TableHead>
+                      <TableHead>{t("categories.nameAr", "Arabic Name")}</TableHead>
+                      <TableHead>{t("categories.slug")}</TableHead>
+                      <TableHead>{t("categories.parent")}</TableHead>
+                      <TableHead>{t("categories.sortOrder")}</TableHead>
+                      <TableHead>{t("categories.active")}</TableHead>
+                      <TableHead className="text-right">{t("app.actions.actions")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((category) => (
+                      <TableRow
+                        key={category.id}
+                        draggable
+                        onDragStart={() => setDraggingId(category.id)}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={() => handleReorder(category.id)}
+                        onDragEnd={() => setDraggingId(null)}
+                      >
+                        <TableCell className="text-muted-foreground">
+                          <GripVertical className="w-4 h-4" />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-md overflow-hidden bg-muted">
+                              {category.imageUrl ? (
+                                <ImageWithFallback src={category.imageUrl} alt={category.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                  <ImageIcon className="w-4 h-4" />
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium text-sm">{category.name}</p>
+                              <p className="text-xs text-muted-foreground">ID: {category.id.slice(0, 6)}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>{category.nameAr || "--"}</TableCell>
+                        <TableCell>{category.slug}</TableCell>
+                        <TableCell>{category.parentId ? parentNames.get(category.parentId) || "--" : t("categories.root", "Root")}</TableCell>
+                        <TableCell>{category.sortOrder ?? 0}</TableCell>
+                        <TableCell>
+                          <Badge className={category.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}>
+                            {category.isActive ? t("app.yes", "Active") : t("app.no", "Inactive")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="icon" onClick={() => setDialogState({ mode: "edit", category })}>
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            {isAdmin && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="text-rose-600">
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>{t("categories.delete", "Delete category")}</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      {t("categories.delete_confirm", "This action cannot be undone.")}
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>{t("app.actions.cancel")}</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => deleteMutation.mutate(category.id)}>
+                                      {t("app.actions.delete")}
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
                             )}
                           </div>
-                          <div>
-                            <p className="font-medium text-sm">{category.name}</p>
-                            <p className="text-xs text-muted-foreground">ID: {category.id.slice(0, 6)}</p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>{category.nameAr || "--"}</TableCell>
-                      <TableCell>{category.slug}</TableCell>
-                      <TableCell>{category.parentId ? parentNames.get(category.parentId) || "--" : t("categories.root", "Root")}</TableCell>
-                      <TableCell>{category.sortOrder ?? 0}</TableCell>
-                      <TableCell>
-                        <Badge className={category.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}>
-                          {category.isActive ? t("app.yes", "Active") : t("app.no", "Inactive")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => setDialogState({ mode: "edit", category })}>
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          {isAdmin && (
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="text-rose-600">
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>{t("categories.delete", "Delete category")}</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    {t("categories.delete_confirm", "This action cannot be undone.")}
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>{t("app.actions.cancel")}</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => deleteMutation.mutate(category.id)}>
-                                    {t("app.actions.delete")}
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
-            <div className="flex items-center justify-between px-4 py-3 border-t text-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t text-sm">
               <span>
                 {t("app.table.page")} {page} {t("app.table.of")} {totalPages}
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <Button
                   variant="outline"
                   size="sm"
@@ -530,7 +532,7 @@ function CategoryFormDialog({ open, onOpenChange, mode, category, parents, loadi
               onFileSelected={(file) => setImageFile(file)}
             />
           </div>
-          <div className="flex gap-3 justify-end">
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
               {t("app.actions.cancel")}
             </Button>

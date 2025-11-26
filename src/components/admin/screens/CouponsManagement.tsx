@@ -165,7 +165,7 @@ export function CouponsManagement() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="font-poppins text-3xl text-gray-900" style={{ fontWeight: 700 }}>
             {t("coupons.title") || "Coupons"}
@@ -178,7 +178,7 @@ export function CouponsManagement() {
               <Plus className="w-4 h-4" /> {t("coupons.addNew") || "New Coupon"}
             </Button>
           </DialogTrigger>
-          <DialogContent aria-describedby={undefined}>
+          <DialogContent aria-describedby={undefined} className="max-w-3xl w-[95vw]">
             <DialogHeader>
               <DialogTitle>{editing ? t("coupons.edit", "Edit Coupon") : t("coupons.addNew", "New Coupon")}</DialogTitle>
             </DialogHeader>
@@ -277,8 +277,8 @@ export function CouponsManagement() {
 
       <Card>
         <CardContent className="p-4 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative w-full sm:flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
                 className="pl-9"
@@ -342,11 +342,11 @@ export function CouponsManagement() {
               </Table>
             )}
           </div>
-          <div className="flex items-center justify-between text-sm text-gray-600">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-gray-600">
             <span>
               {t('app.table.total') || 'Total'}: {total}
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 sm:justify-end">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>{t('app.actions.prev','Prev')}</Button>
               <span>
                 {t('app.table.page') || 'Page'} {page} / {totalPages}

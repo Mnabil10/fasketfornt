@@ -1,19 +1,8 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { listProducts, type Product, type Paged } from "../../services/products.service";
+import type { ProductFilters } from "../../types/product";
 
-export type UseProductsAdminFilters = {
-  q?: string;
-  categoryId?: string;
-  status?: Product["status"];
-  minPriceCents?: number;
-  maxPriceCents?: number;
-  inStock?: boolean;
-  isHotOffer?: boolean;
-  orderBy?: "createdAt" | "priceCents" | "name" | "stock";
-  sort?: "asc" | "desc";
-  page?: number;
-  pageSize?: number;
-};
+export type UseProductsAdminFilters = ProductFilters;
 
 export const PRODUCTS_QUERY_KEY = ["admin-products"] as const;
 

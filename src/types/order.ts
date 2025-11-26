@@ -67,6 +67,8 @@ export type OrderFilters = PaginatedQuery & {
   from?: string;
   to?: string;
   customer?: string;
+  q?: string;
+  search?: string;
   minTotalCents?: number;
   maxTotalCents?: number;
   driverId?: string;

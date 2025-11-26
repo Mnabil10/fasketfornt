@@ -77,8 +77,19 @@ function buildDriverFormData(payload: DeliveryDriverPayload | DriverVehiclePaylo
     if (vehicle.type) fd.append("vehicle.type", vehicle.type);
     if (vehicle.plateNumber) fd.append("vehicle.plateNumber", vehicle.plateNumber);
     if (vehicle.color) fd.append("vehicle.color", vehicle.color);
-    const licenseUrl = vehicle.licenseImageUrl ?? resolveImageUrl(vehicle.licenseImage ?? null);
-    if (licenseUrl) fd.append("vehicle.licenseImageUrl", licenseUrl);
+    const licenseImageValue =
+      (vehicle as DriverVehiclePayload | undefined)?.licenseImageFile ??
+      vehicle.licenseImage ??
+      vehicle.licenseImageUrl ??
+      null;
+    const resolvedLicenseImage = resolveImageValue(licenseImageValue as UploadableImage);
+    if (resolvedLicenseImage) {
+      if (isFileLike(resolvedLicenseImage)) {
+        fd.append("vehicle.licenseImage", resolvedLicenseImage);
+      } else {
+        fd.append("vehicle.licenseImageUrl", resolvedLicenseImage);
+      }
+    }
   }
 
   return fd;
@@ -153,6 +164,6 @@ export async function saveDeliveryDriverVehicle(id: string, payload: DriverVehic
     licenseImageUrl: licenseImageUrl || undefined,
   };
 
-  const { data } = await api.patch<DeliveryDriver>(`${BASE}/${id}/vehicle`, body);
+  const { data } = await api.post<DeliveryDriver>(`${BASE}/${id}/vehicle`, body);
   return data;
 }

@@ -1,3 +1,4 @@
+import type { AxiosError } from "axios";
 import { api } from "../lib/api";
 import { buildQueryParams } from "../lib/query";
 import type { DeliveryDriver } from "../types/delivery";
@@ -297,10 +298,26 @@ function normalizeOrderReceipt(dto: OrderReceiptDto): OrderReceipt {
 }
 
 export async function listOrders(params?: OrderFilters): Promise<OrdersPaged> {
-  const query = buildQueryParams(params);
-  const { data } = await api.get<OrdersPaged<OrderDto>>("/api/v1/admin/orders", { params: query });
-  const items = (data.items || []).map((order) => normalizeOrderSummary(order));
-  return { ...data, items };
+  const query = buildQueryParams(params) ?? {};
+  const search = params?.customer?.trim();
+  if (search && search.length >= 3) {
+    query.customer = search;
+  }
+
+  try {
+    const { data } = await api.get<OrdersPaged<OrderDto>>("/api/v1/admin/orders", { params: query });
+    const items = (data.items || []).map((order) => normalizeOrderSummary(order));
+    return { ...data, items };
+  } catch (error) {
+    if (shouldRetryWithoutFilters(error, ["status"]) && query.status) {
+      const fallbackQuery = { ...query };
+      delete (fallbackQuery as any).status;
+      const { data } = await api.get<OrdersPaged<OrderDto>>("/api/v1/admin/orders", { params: fallbackQuery });
+      const items = (data.items || []).map((order) => normalizeOrderSummary(order));
+      return { ...data, items };
+    }
+    throw error;
+  }
 }
 
 export async function getOrder(id: string): Promise<OrderDetail> {
@@ -321,4 +338,14 @@ export async function assignDriverToOrder(id: string, driverId: string) {
 export async function getOrderReceipt(orderId: string): Promise<OrderReceipt> {
   const { data } = await api.get<OrderReceiptDto>(`/api/v1/admin/orders/${orderId}/receipt`);
   return normalizeOrderReceipt(data);
+}
+
+function shouldRetryWithoutFilters(error: unknown, forbiddenKeys: string[]) {
+  const axiosError = error as AxiosError;
+  if (!axiosError?.response?.data) return false;
+  const errors = (axiosError.response.data as any)?.details?.errors;
+  if (!Array.isArray(errors)) return false;
+  return errors.some(
+    (msg) => typeof msg === "string" && forbiddenKeys.some((key) => msg.includes(key) && msg.includes("should not exist"))
+  );
 }

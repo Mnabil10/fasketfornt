@@ -54,6 +54,7 @@ export type SystemSettings = {
 };
 
 export type LoyaltySettings = {
+  loyaltyEnabled?: boolean;
   enabled?: boolean;
   earnPoints?: number;
   earnPerCents?: number;
@@ -71,7 +72,8 @@ export type SettingsPayload = {
   general?: GeneralSettings;
   delivery?: DeliverySettings;
   loyalty?: LoyaltySettings;
-  payments?: PaymentSettings;
+  payment?: PaymentSettings;
+  payments?: PaymentSettings; // kept for UI compatibility
   notifications?: NotificationsSettings;
   system?: SystemSettings;
 };

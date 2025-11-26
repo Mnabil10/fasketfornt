@@ -126,7 +126,7 @@ type ProductFormValues = z.infer<typeof productFormSchema>;
 type DrawerState = { mode: "create" | "edit"; product?: Product } | null;
 type StatusFilter = Product["status"] | "all";
 type StockFilter = "all" | "in" | "out" | "low";
-type SortField = "createdAt" | "priceCents" | "name" | "stock";
+type SortField = "createdAt" | "priceCents" | "name";
 
 type FilterState = {
   status: StatusFilter;
@@ -286,7 +286,6 @@ const sortFieldLabels: Record<SortField, string> = {
   createdAt: "products.sort.createdAt",
   priceCents: "products.sort.price",
   name: "products.sort.name",
-  stock: "products.sort.stock",
 };
 
 const sortDirections: Record<"asc" | "desc", string> = {
@@ -543,7 +542,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard icon={Package} label={t("products.stats.total", "Total products")} value={stats.total} />
         <StatCard icon={DollarSign} label={t("products.stats.active", "Active")} value={stats.active} accent="text-emerald-600" />
         <StatCard icon={Flame} label={t("products.stats.low", "Low stock")} value={stats.lowStock} accent="text-amber-600" />
@@ -650,11 +649,11 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
                 placeholder="0"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
               <Switch checked={filters.onlyHot} onCheckedChange={(checked) => setFilters((prev) => ({ ...prev, onlyHot: checked, page: 1 }))} />
               <span className="text-sm">{t("products.hotOffer", "Hot offer")}</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
               <Label className="text-xs text-muted-foreground">{t("products.sort.label", "Sort by")}</Label>
               <Select
                 value={filters.sortField}
@@ -705,7 +704,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base font-semibold flex items-center gap-2">
             <Filter className="w-4 h-4 text-muted-foreground" />
             {t("products.tableTitle", "Products")}
@@ -751,10 +750,9 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
                         <ArrowUpDown className={sortIconClass("priceCents")} />
                       </div>
                     </TableHead>
-                    <TableHead className={`cursor-pointer ${primaryAlignClass}`} onClick={() => handleSort("stock")}>
-                      <div className={`flex items-center gap-1 ${sortHeaderClass}`}>
+                    <TableHead className={primaryAlignClass}>
+                      <div className="flex items-center gap-1">
                         {t("products.stock")}
-                        <ArrowUpDown className={sortIconClass("stock")} />
                       </div>
                     </TableHead>
                     <TableHead className={primaryAlignClass}>{t("products.status")}</TableHead>
@@ -907,7 +905,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
                 </Select>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
               <Button
                 variant="outline"
                 size="sm"
@@ -933,7 +931,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
       </Card>
 
       <Dialog open={!!drawerState} onOpenChange={(open) => !open && setDrawerState(null)}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {drawerState?.mode === "edit" ? t("products.editProduct", "Edit product") : t("products.addNew")}
@@ -1233,7 +1231,7 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
         )}
       />
 
-      <div className="flex gap-3 justify-end">
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
         <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
           {t("app.actions.cancel")}
         </Button>
@@ -1406,7 +1404,7 @@ function BulkUploadDrawer({ open, onOpenChange, onCompleted }: BulkUploadDrawerP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl w-[95vw]">
         <DialogHeader>
           <DialogTitle>{t("products.importExcel", "Import products from Excel")}</DialogTitle>
           <DialogDescription>

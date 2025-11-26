@@ -1,5 +1,6 @@
 import { api } from "../lib/api";
 import { buildQueryParams } from "../lib/query";
+import type { ProductFilters } from "../types/product";
 
 export type Product = {
   id: string;
@@ -108,31 +109,31 @@ function normalizeJsonPayload(body: ProductPayload) {
   return payload;
 }
 
-export async function listProducts(params?: {
-  q?: string;
-  categoryId?: string;
-  status?: Product["status"];
-  minPriceCents?: number;
-  maxPriceCents?: number;
-  inStock?: boolean;
-  isHotOffer?: boolean;
-  orderBy?: "createdAt" | "priceCents" | "name" | "stock";
-  sort?: "asc" | "desc";
-  page?: number;
-  pageSize?: number;
-}) {
-  const query = buildQueryParams(params);
+export async function listProducts(params?: ProductFilters) {
+  const { isHotOffer, ...rest } = params ?? {};
+  const query = buildQueryParams(rest);
+
+  if (isHotOffer) {
+    // Backend auto-filters isHotOffer on this endpoint and rejects an explicit isHotOffer query param
+    const { data } = await api.get<Paged<Product>>("/api/v1/admin/products/hot-offers", { params: query });
+    return data;
+  }
+
   const { data } = await api.get<Paged<Product>>("/api/v1/admin/products", { params: query });
   return data;
 }
 // New: List hot offers
-export async function listHotOffers(params?: { q?: string; page?: number; pageSize?: number }) {
-  const query = buildQueryParams(params);
+export async function listHotOffers(params?: ProductFilters) {
+  const { isHotOffer, ...rest } = params ?? {};
+  const query = buildQueryParams(rest);
   const { data } = await api.get<Paged<Product>>("/api/v1/admin/products/hot-offers", { params: query });
   return data;
 }
-export async function getProduct(id: string) {
-  const { data } = await api.get<Product>(`/api/v1/admin/products/${id}`);
+export async function getProduct(id: string): Promise<Product> {
+  const { data } = await api.get<Product | null>(`/api/v1/admin/products/${id}`);
+  if (!data) {
+    throw new Error("Product not found");
+  }
   return data;
 }
 

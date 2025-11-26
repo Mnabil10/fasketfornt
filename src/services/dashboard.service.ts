@@ -24,3 +24,30 @@ export async function fetchDashboardTimeseries(params?: { from?: string; to?: st
   const { data } = await api.get("/api/v1/admin/dashboard/timeseries", { params: query });
   return data as Array<{ period: string; revenueCents: number; orders: number }>;
 }
+
+export async function fetchDashboardTopProducts(params?: { from?: string; to?: string; limit?: number }) {
+  const query = buildQueryParams(params);
+  const { data } = await api.get<Array<{ productId: string; qty: number; name: string }>>(
+    "/api/v1/admin/dashboard/top-products",
+    { params: query }
+  );
+  return data;
+}
+
+export async function fetchDashboardLowStock(params?: { threshold?: number }) {
+  const query = buildQueryParams(params);
+  const { data } = await api.get<Array<{ id: string; name: string; stock: number }>>(
+    "/api/v1/admin/dashboard/low-stock",
+    { params: query }
+  );
+  return data;
+}
+
+export async function fetchDashboardStatusBreakdown(params?: { from?: string; to?: string }) {
+  const query = buildQueryParams(params);
+  const { data } = await api.get<Array<{ status: string; _count: { status: number } }>>(
+    "/api/v1/admin/dashboard/status-breakdown",
+    { params: query }
+  );
+  return data;
+}

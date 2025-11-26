@@ -126,7 +126,7 @@ export function CustomersManagement() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="font-poppins text-3xl text-gray-900" style={{ fontWeight: 700 }}>
             {t("customers.title") || "Customers Management"}
@@ -178,7 +178,7 @@ export function CustomersManagement() {
       <Card>
         <CardContent className="p-4">
           <div className="flex flex-wrap items-center gap-4">
-            <div className="relative flex-1 min-w-64">
+            <div className="relative w-full min-w-[220px] md:flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
                 placeholder={t("filters.searchPlaceholder") || "Search customers..."}
@@ -285,31 +285,33 @@ export function CustomersManagement() {
           </div>
 
           {/* Pagination */}
-          <div className="flex items-center gap-3 justify-end mt-4">
-            <Button
-              variant="outline"
-              disabled={page === 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              {t("app.actions.prev")}
-            </Button>
-            <span className="text-sm text-gray-600">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:justify-end mt-4">
+            <div className="flex gap-3 sm:order-2 sm:justify-end">
+              <Button
+                variant="outline"
+                disabled={page === 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                {t("app.actions.prev")}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                {t("app.actions.next")}
+              </Button>
+            </div>
+            <span className="text-sm text-gray-600 sm:order-1">
               {t("app.table.page")} {page} {t("app.table.of")} {totalPages}
             </span>
-            <Button
-              variant="outline"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              {t("app.actions.next")}
-            </Button>
           </div>
         </CardContent>
       </Card>
 
       {/* Customer Details Modal */}
       <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto" aria-describedby={undefined}>
+        <DialogContent className="max-w-4xl w-[95vw] max-h-[80vh] overflow-y-auto" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>
               {t("customers.title")} : {selected?.name}
@@ -471,7 +473,7 @@ export function CustomersManagement() {
 
       {/* Reset Password Modal */}
       <Dialog open={resetOpen} onOpenChange={setResetOpen}>
-        <DialogContent className="max-w-md" aria-describedby={undefined}>
+        <DialogContent className="max-w-md w-[95vw]" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>{t("resetPassword", "Reset Password")}</DialogTitle>
           </DialogHeader>
