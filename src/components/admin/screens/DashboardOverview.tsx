@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { Button } from "../../ui/button";
 import { Badge } from "../../ui/badge";
 import { Skeleton } from "../../ui/skeleton";
+import { AlertTriangle } from "lucide-react";
+import { ErrorState } from "../common/ErrorState";
 import {
   Select,
   SelectContent,
@@ -74,6 +76,8 @@ export function DashboardOverview({ updateAdminState }: Props) {
   const recentOrders = summary?.recent?.slice(0, 5) || [];
   const lowStock = summary?.lowStock?.slice(0, 5) || [];
 
+  const hasError = summaryQuery.isError || seriesQuery.isError;
+
   const stats = summary
     ? [
         {
@@ -101,6 +105,25 @@ export function DashboardOverview({ updateAdminState }: Props) {
 
   return (
     <div className="space-y-6">
+      {hasError && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="flex items-center gap-3 p-4">
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-800">
+                {t("dashboard.load_failed", "We couldn't load dashboard data. Please try again.")}
+              </p>
+              <p className="text-xs text-amber-700">
+                {t("dashboard.retry_hint", "Check your connection or refresh the page.")}
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => { summaryQuery.refetch(); seriesQuery.refetch(); }}>
+              {t("app.actions.refresh", "Refresh")}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h2 className="text-2xl lg:text-3xl font-semibold text-foreground">{t("dashboard.title", "Analytics overview")}</h2>
@@ -163,6 +186,14 @@ export function DashboardOverview({ updateAdminState }: Props) {
           <CardContent className="h-72">
             {seriesQuery.isLoading ? (
               <Skeleton className="h-full" />
+            ) : seriesQuery.isError ? (
+              <ErrorState
+                message={t("dashboard.load_failed", "We couldn't load dashboard data. Please try again.")}
+                onRetry={() => {
+                  seriesQuery.refetch();
+                  summaryQuery.refetch();
+                }}
+              />
             ) : (
               <div className="h-full w-full min-h-[240px]">
                 <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={200}>
@@ -228,6 +259,8 @@ export function DashboardOverview({ updateAdminState }: Props) {
           description={t("dashboard.topCategoriesHint", "Based on orders for the selected period")}
           emptyLabel={t("dashboard.noData")}
           loading={summaryQuery.isLoading}
+          error={summaryQuery.isError}
+          onRetry={() => summaryQuery.refetch()}
           items={topCategories.map((item) => ({
             id: item.categoryId,
             name: item.name,
@@ -239,6 +272,8 @@ export function DashboardOverview({ updateAdminState }: Props) {
           description={t("dashboard.topProductsHint", "Bestsellers by quantity")}
           emptyLabel={t("dashboard.noData")}
           loading={summaryQuery.isLoading}
+          error={summaryQuery.isError}
+          onRetry={() => summaryQuery.refetch()}
           items={topProducts.map((product) => ({
             id: product.productId,
             name: product.name,
@@ -255,6 +290,11 @@ export function DashboardOverview({ updateAdminState }: Props) {
           <CardContent className="space-y-3">
             {summaryQuery.isLoading ? (
               <Skeleton className="h-40" />
+            ) : summaryQuery.isError ? (
+              <ErrorState
+                message={t("dashboard.load_failed", "We couldn't load dashboard data. Please try again.")}
+                onRetry={() => summaryQuery.refetch()}
+              />
             ) : recentOrders.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t("dashboard.noRecent", "No recent orders")}</p>
             ) : (
@@ -282,6 +322,11 @@ export function DashboardOverview({ updateAdminState }: Props) {
           <CardContent className="space-y-4">
             {summaryQuery.isLoading ? (
               <Skeleton className="h-40" />
+            ) : summaryQuery.isError ? (
+              <ErrorState
+                message={t("dashboard.load_failed", "We couldn't load dashboard data. Please try again.")}
+                onRetry={() => summaryQuery.refetch()}
+              />
             ) : (
               summary?.byStatus?.map((status) => (
                 <div key={status.status} className="flex items-center justify-between">
@@ -324,10 +369,12 @@ type DataListProps = {
   description: string;
   emptyLabel: string;
   loading: boolean;
+  error?: boolean;
+  onRetry?: () => void;
   items: Array<{ id: string; name: string; value: string }>;
 };
 
-function DataList({ title, description, emptyLabel, loading, items }: DataListProps) {
+function DataList({ title, description, emptyLabel, loading, error, onRetry, items }: DataListProps) {
   return (
     <Card>
       <CardHeader>
@@ -337,6 +384,8 @@ function DataList({ title, description, emptyLabel, loading, items }: DataListPr
       <CardContent className="space-y-3">
         {loading ? (
           <Skeleton className="h-36" />
+        ) : error ? (
+          <ErrorState message={emptyLabel} onRetry={onRetry} />
         ) : items.length === 0 ? (
           <p className="text-sm text-muted-foreground">{emptyLabel}</p>
         ) : (

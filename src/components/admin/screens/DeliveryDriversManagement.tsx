@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useDebounce } from "../../../hooks/useDebounce";
 import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../ui/select";
 import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
 import { EmptyState } from "../common/EmptyState";
 import { ErrorState } from "../common/ErrorState";
@@ -32,7 +33,7 @@ export function DeliveryDriversManagement() {
   const isDriverRoute = segments[0] === "delivery-drivers";
   const isCreate = isDriverRoute && segments[1] === "create";
   const isEdit = isDriverRoute && segments[2] === "edit";
-  const editingId = isEdit ? segments[1] : undefined;
+  const editingId = isEdit ? segments[1] ?? segments[2] : undefined;
 
   if (isCreate || isEdit) {
     return <DriverFormPage mode={isCreate ? "create" : "edit"} driverId={editingId} onDone={() => navigate("/delivery-drivers")} />;
@@ -48,11 +49,12 @@ type DriverListPageProps = {
 
 function DriverListPage({ onCreate, onEdit }: DriverListPageProps) {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [isActiveFilter, setIsActiveFilter] = useState<"all" | "active" | "inactive">("all");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const debouncedSearch = useDebounce(search, 300);
-  const pageSize = 20;
   const filters = useMemo<DeliveryDriverFilters>(
     () => ({
       search: debouncedSearch || undefined,
@@ -69,19 +71,43 @@ function DriverListPage({ onCreate, onEdit }: DriverListPageProps) {
     mutationFn: ({ driverId, isActive }: { driverId: string; isActive: boolean }) =>
       updateDeliveryDriverStatus(driverId, isActive),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: DELIVERY_DRIVERS_QUERY_KEY }),
+    onError: (error) => toast.error(getAdminErrorMessage(error, t, t("drivers.statusUpdateFailed", "Failed to update driver status"))),
   });
 
   const toggleStatus = async (driverId: string, isActive: boolean) => {
-    try {
-      await statusMutation.mutateAsync({ driverId, isActive });
-    } catch (error) {
-      toast.error(getAdminErrorMessage(error, t));
+    if (!isActive) {
+      const confirmed = window.confirm(
+        t("drivers.disableConfirm", "Disable this driver? They will stop receiving assignments.")
+      );
+      if (!confirmed) return;
     }
+    await statusMutation.mutateAsync({ driverId, isActive });
   };
 
   const items = driversQuery.data?.items || [];
   const total = driversQuery.data?.total || 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+
+  useEffect(() => {
+    const qParam = searchParams.get("q") || "";
+    const statusParam = (searchParams.get("status") as "all" | "active" | "inactive" | null) || "all";
+    const pageParam = Number(searchParams.get("page") || 1);
+    const sizeParam = Number(searchParams.get("pageSize") || 20);
+    setSearch(qParam);
+    setIsActiveFilter(statusParam);
+    setPage(Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1);
+    setPageSize(Number.isFinite(sizeParam) && sizeParam > 0 ? sizeParam : 20);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (search.trim()) params.set("q", search.trim());
+    if (isActiveFilter !== "all") params.set("status", isActiveFilter);
+    if (page > 1) params.set("page", String(page));
+    if (pageSize !== 20) params.set("pageSize", String(pageSize));
+    setSearchParams(params, { replace: true });
+  }, [search, isActiveFilter, page, pageSize, setSearchParams]);
 
   return (
     <div className="p-4 lg:p-6 space-y-4">
@@ -149,6 +175,21 @@ function DriverListPage({ onCreate, onEdit }: DriverListPageProps) {
                 {t("drivers.inactive", "Inactive")}
               </Badge>
             </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">{t("common.page_size", "Page size")}:</span>
+              <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}>
+                <SelectTrigger className="w-28">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[20, 50, 100].map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -178,7 +219,11 @@ function DriverListPage({ onCreate, onEdit }: DriverListPageProps) {
             />
             <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
               <div>
-                {t("common.pagination", { defaultValue: "Page {{page}} of {{count}}", page, count: pageCount })}
+                {t("common.pagination.summary", "{{from}}-{{to}} of {{total}}", {
+                  from: (page - 1) * pageSize + 1,
+                  to: Math.min(page * pageSize, total),
+                  total,
+                })}
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>

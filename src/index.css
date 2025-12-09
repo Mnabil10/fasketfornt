@@ -1,5 +1,5 @@
 /* src/index.css */
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Cairo:wght@400;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -8,6 +8,7 @@
 /* Light tokens (your exact values) */
 :root {
   --font-size: 16px;
+  --ui-kit: "shadcn";
 
   /* Fasket Brand */
   --fasket-red: #E53935;
@@ -62,6 +63,26 @@
   --sidebar-accent-foreground: #E53935;
   --sidebar-border: rgba(45, 45, 45, 0.1);
   --sidebar-ring: #E53935;
+}
+
+/* RTL typography + spacing normalization */
+html[dir="rtl"] body {
+  font-family: "Cairo", "Inter", "Poppins", system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+html[dir="rtl"] .text-left {
+  text-align: right;
+}
+
+html[dir="rtl"] .space-x-2 > * + * {
+  margin-left: 0;
+  margin-right: 0.5rem;
+}
+
+html[dir="rtl"] .space-x-3 > * + * {
+  margin-left: 0;
+  margin-right: 0.75rem;
 }
 
 /* Dark tokens (as you provided) */

@@ -1,6 +1,8 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { onAuthEvent } from "../lib/auth-events";
+import { registerNavigator } from "../lib/navigation";
 
 type User = { id: string; name: string; role: string; phone?: string; email?: string } | null;
 
@@ -38,6 +40,7 @@ function readStoredUser(): User {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
   const [token, setToken] = useState<string | null>(() => localStorage.getItem("fasket_admin_token"));
   const [refreshToken, setRefreshToken] = useState<string | null>(() => localStorage.getItem("fasket_admin_refresh"));
   const [user, setUser] = useState<User>(() => readStoredUser());
@@ -76,6 +79,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("storage", handleStorage);
     };
   }, [signOut]);
+
+  useEffect(() => {
+    registerNavigator((path, options) => navigate(path, options));
+  }, [navigate]);
 
   const isAdmin = user?.role === "ADMIN";
   const isStaff = user?.role === "STAFF";

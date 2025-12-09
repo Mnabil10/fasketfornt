@@ -2,6 +2,14 @@ import { api } from "../lib/api";
 
 type UploadResponse = {
   url: string;
+  warnings?: string[];
+};
+
+type SignedUploadTarget = {
+  uploadUrl: string | null;
+  publicUrl: string;
+  driver?: "s3" | "local" | "inline";
+  warnings?: string[];
 };
 
 type ResizeOptions = {
@@ -24,6 +32,11 @@ export async function uploadAdminFile(file: File | Blob, options?: { resize?: Re
     ...options?.resize,
     maxBytes: options?.resize?.maxBytes ?? MAX_UPLOAD_BYTES,
   });
+
+  const uploadUrl = await tryDirectUpload(maybeResized as File);
+  if (uploadUrl) {
+    return uploadUrl;
+  }
 
   const formData = new FormData();
   formData.append("file", maybeResized);
@@ -124,4 +137,22 @@ async function encodeImage(
 
   const dataUrl = canvas.toDataURL(opts.type, opts.quality);
   return dataURLToBlob(dataUrl, opts.type);
+}
+
+async function tryDirectUpload(file: File): Promise<UploadResponse | null> {
+  const contentType = file.type || "application/octet-stream";
+  try {
+    const { data } = await api.get<SignedUploadTarget>("/api/v1/admin/uploads/signed-url", {
+      params: { filename: file.name || "upload", contentType },
+    });
+    if (!data?.uploadUrl) return null;
+    await fetch(data.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: file,
+    });
+    return { url: data.publicUrl, warnings: data.warnings };
+  } catch {
+    return null;
+  }
 }

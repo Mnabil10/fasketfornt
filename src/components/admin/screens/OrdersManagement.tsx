@@ -159,7 +159,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   const onAssignDriver = async () => {
     if (!selectedOrderId || !selectedDriverIdToAssign) return;
     try {
-      await assignDriverMutation.mutateAsync(selectedDriverIdToAssign);
+      await assignDriverMutation.mutateAsync({ orderId: selectedOrderId, driverId: selectedDriverIdToAssign });
       toast.success(t("orders.driverAssigned", "Driver assigned"));
       queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
       detailQuery.refetch();

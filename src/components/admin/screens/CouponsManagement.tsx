@@ -55,6 +55,13 @@ const couponSchema = z.object({
   endsAt: dateString,
   minOrderCents: optionalMoney,
   maxDiscountCents: optionalMoney,
+}).superRefine((data, ctx) => {
+  if (data.value === undefined || data.value === null) {
+    ctx.addIssue({ code: "custom", message: "coupons.value_required", path: ["value"] });
+  }
+  if (data.type === "PERCENT" && data.value != null && data.value > 100) {
+    ctx.addIssue({ code: "custom", message: "coupons.percent_max", path: ["value"] });
+  }
 });
 
 const defaultValues: CouponFormValues = {

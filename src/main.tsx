@@ -6,6 +6,7 @@ import "./i18n";
 import "./index.css"; // keep your styles
 import { queryClient } from "./lib/queryClient";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
+import { initSentry } from "./lib/sentry";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -16,3 +17,5 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </React.StrictMode>
 );
+
+initSentry().catch(() => undefined);

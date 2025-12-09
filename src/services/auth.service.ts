@@ -12,11 +12,11 @@ function resolveUserAgent() {
 }
 
 // Login using phone/email + password
-export async function adminLogin(identifier: string, password: string): Promise<LoginResponse> {
+export async function adminLogin(identifier: string, password: string, otp?: string): Promise<LoginResponse> {
   const userAgent = resolveUserAgent();
   const { data } = await api.post<LoginResponse>(
     "/api/v1/auth/login",
-    { identifier, password },
+    { identifier, password, ...(otp ? { otp } : {}) },
     {
       headers: {
         // Browsers block overriding the actual User-Agent header, so send a custom mirror instead.

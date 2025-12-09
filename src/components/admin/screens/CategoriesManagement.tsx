@@ -134,7 +134,7 @@ export function CategoriesManagement() {
   const { isAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [searchInput, setSearchInput] = useState("");
-  const debouncedSearch = useDebounce(searchInput, 400);
+  const debouncedSearch = useDebounce(searchInput, 300);
   const [page, setPage] = useState(1);
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [rows, setRows] = useState<Category[]>([]);
@@ -151,6 +151,8 @@ export function CategoriesManagement() {
 
   const categoryData = categoriesQuery.data;
   const categoryItems: Category[] = categoryData?.items ?? [];
+  const total = categoryData?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   useEffect(() => {
     if (categoryData?.items) {
@@ -224,13 +226,13 @@ export function CategoriesManagement() {
       // revert visual order
       if (categoryItems.length) setRows(categoryItems);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY }),
+    onSuccess: () => {
+      toast.success(t("categories.reordered", "Categories reordered"));
+      queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
+    },
   });
 
-  const total = categoryData?.total || 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  const handleReorder = (targetId: string) => {
+    const handleReorder = (targetId: string) => {
     if (!draggingId || draggingId === targetId) return;
     setRows((prev) => {
       const next = [...prev];
@@ -271,6 +273,19 @@ export function CategoriesManagement() {
               placeholder={t("filters.searchPlaceholder", "Search categories")}
               className="pl-9"
             />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSearchInput("");
+                setPage(1);
+                categoriesQuery.refetch();
+              }}
+            >
+              {t("common.resetFilters", "Reset filters")}
+            </Button>
           </div>
 
           <div className="border rounded-lg overflow-hidden">
@@ -389,7 +404,11 @@ export function CategoriesManagement() {
             )}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t text-sm">
               <span>
-                {t("app.table.page")} {page} {t("app.table.of")} {totalPages}
+                {t("common.pagination.summary", "{{from}}-{{to}} of {{total}}", {
+                  from: (page - 1) * PAGE_SIZE + 1,
+                  to: Math.min(page * PAGE_SIZE, total),
+                  total,
+                })}
               </span>
               <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <Button
@@ -556,16 +575,21 @@ function CategoryImageInput({ value, onUrlChange, onFileSelected }: CategoryImag
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const displayValue = value?.startsWith("blob:") ? "" : value || "";
+  const [sizeError, setSizeError] = useState<string | null>(null);
 
   const handleFile = (file: File | null) => {
     if (!file) {
       onFileSelected(null);
+      setSizeError(null);
       return;
     }
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
-      toast.error(t("products.upload.too_large", "File too large"));
+      const msg = t("products.upload.too_large", "File too large");
+      setSizeError(msg);
+      toast.error(msg);
       return;
     }
+    setSizeError(null);
     onUrlChange("");
     onFileSelected(file);
   };
@@ -625,6 +649,7 @@ function CategoryImageInput({ value, onUrlChange, onFileSelected }: CategoryImag
         onChange={(event) => onUrlChange(event.target.value)}
         placeholder="https://cdn.fasket.com/category.jpg"
       />
+      {sizeError && <p className="text-xs text-rose-600">{sizeError}</p>}
     </div>
   );
 }

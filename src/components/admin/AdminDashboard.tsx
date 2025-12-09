@@ -35,15 +35,18 @@ import {
 const DashboardOverview = React.lazy(() =>
   import("./screens/DashboardOverview").then((m) => ({ default: m.DashboardOverview }))
 );
+const ProductsManagement = React.lazy(() =>
+  import("./screens/ProductsManagement").then((m) => ({ default: m.ProductsManagement }))
+);
 import { CategoriesManagement } from "./screens/CategoriesManagement";
-import { ProductsManagement } from "./screens/ProductsManagement";
-import { OrdersManagement } from "./screens/OrdersManagement";
-import { CustomersManagement } from "./screens/CustomersManagement";
+import { FasketProducts } from "./screens/FasketProducts";
+import { FasketOrders } from "./screens/FasketOrders";
 import { SettingsManagement } from "./screens/SettingsManagement";
 import { CouponsManagement } from "./screens/CouponsManagement";
 import { HotOffersList } from "./screens/HotOffers";
 import { DeliveryDriversManagement } from "./screens/DeliveryDriversManagement";
 import { DeliveryZonesManagement } from "./screens/DeliveryZonesManagement";
+import { CustomersManagement } from "./screens/CustomersManagement";
 import { useTranslation } from "react-i18next";
 import BrandLogo from "../common/BrandLogo";
 import { fetchDashboard, type DashboardSummary } from "../../services/dashboard.service";
@@ -298,10 +301,7 @@ export function AdminDashboard() {
   const renderScreen = () => {
     const p = { adminState, updateAdminState } as any;
     const secondary = pathSegments[1];
-
-    if (derivedScreen === "delivery-drivers") {
-      return <DeliveryDriversManagement />;
-    }
+    const tertiary = pathSegments[2];
 
     if (derivedScreen === "settings" && secondary === "delivery-zones") {
       return <DeliveryZonesManagement />;
@@ -317,17 +317,26 @@ export function AdminDashboard() {
       case "categories":
         return <CategoriesManagement {...p} />;
       case "products":
-        return <ProductsManagement {...p} />;
+        if (secondary === "manage") {
+          return (
+            <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">{t("app.loading", "Loading...")}</div>}>
+              <ProductsManagement productId={tertiary} onDone={() => navigate("/products")} />
+            </React.Suspense>
+          );
+        }
+        return <FasketProducts />;
       case "hot-offers":
         return <HotOffersList {...p} />;
       case "orders":
-        return <OrdersManagement {...p} initialOrderId={secondary} />;
+        return <FasketOrders initialOrderId={secondary} />;
       case "customers":
-        return <CustomersManagement {...p} />;
+        return <CustomersManagement />;
       case "coupons":
         return <CouponsManagement {...p} />;
       case "settings":
         return <SettingsManagement {...p} initialSection={secondary} />;
+      case "delivery-drivers":
+        return <DeliveryDriversManagement />;
       default:
         return <DashboardOverview {...p} />;
     }

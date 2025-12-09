@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import i18n from "../i18n";
 import { refreshAccessToken } from "../services/auth.service";
 import { emitAuthEvent } from "./auth-events";
+import { navigateTo } from "./navigation";
 
 const baseURL = import.meta.env.VITE_API_BASE;
 if (!baseURL) {
@@ -82,6 +83,7 @@ function hardSignOut() {
   localStorage.removeItem("fasket_admin_refresh");
   localStorage.removeItem("fasket_admin_user");
   emitAuthEvent("logout");
+  navigateTo("/signin", { replace: true });
 }
 
 api.interceptors.response.use(
@@ -145,7 +147,6 @@ api.interceptors.response.use(
       const rt = localStorage.getItem("fasket_admin_refresh");
       if (!rt) {
         hardSignOut();
-        location.href = "/signin";
         throw err;
       }
 
@@ -174,7 +175,6 @@ api.interceptors.response.use(
       } catch (e) {
         toast.error(i18n.t("auth.sessionExpired", "Session expired, please login again"));
         hardSignOut();
-        location.href = "/signin";
         throw e;
       } finally {
         refreshing = false;
@@ -184,9 +184,7 @@ api.interceptors.response.use(
     // Forbidden: redirect to a friendly page
     if (status === 403) {
       // Do not clear tokens here; user may have other permissions
-      if (location.pathname !== "/forbidden") {
-        location.href = "/forbidden";
-      }
+      navigateTo("/forbidden", { replace: true });
     }
 
     // Network error or other status

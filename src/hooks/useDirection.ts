@@ -10,6 +10,7 @@ export function useDirection() {
     root.dir = dir;
     root.lang = i18n.language;
     document.body.dataset.dir = dir;
+    document.body.dataset.uiKit = "shadcn";
     document.body.classList.toggle("rtl", dir === "rtl");
   }, [dir, i18n.language]);
 

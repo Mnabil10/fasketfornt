@@ -39,9 +39,16 @@ const passwordSchema = z
   .min(8, { message: "validation.password" })
   .refine((v) => /[A-Za-z]/.test(v) && /\d/.test(v), { message: "validation.password" });
 
+const otpSchema = z
+  .string()
+  .optional()
+  .transform((v) => (v ? v.trim() : ""))
+  .refine((v) => v === "" || /^\d{4,8}$/.test(v), { message: "auth.invalid_otp" });
+
 const schema = z.object({
   identifier: identifierSchema,
   password: passwordSchema,
+  otp: otpSchema,
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -56,15 +63,17 @@ export default function SignIn() {
 
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [requireOtp, setRequireOtp] = useState(false);
 
   const {
     register,
     handleSubmit,
     formState: { errors },
     setValue,
+    watch,
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { identifier: "", password: "" },
+    defaultValues: { identifier: "", password: "", otp: "" },
     mode: "onSubmit",
   });
 
@@ -73,12 +82,18 @@ export default function SignIn() {
 
   async function onSubmit(values: FormValues) {
     setServerError(null);
+    const otp = requireOtp ? watch("otp" as any) : undefined;
+    if (requireOtp && (!otp || String(otp).trim().length < 4)) {
+      setServerError(t("auth.otp_required", "Enter the 2FA code to continue"));
+      return;
+    }
+
     try {
       setLoading(true);
       const identifier = values.identifier;
       setValue("identifier", identifier, { shouldValidate: false });
 
-      const res = await adminLogin(identifier, values.password);
+      const res = await adminLogin(identifier, values.password, otp as string | undefined);
       const normalizedRole = (res.user?.role || "").toUpperCase();
       if (!["ADMIN", "STAFF"].includes(normalizedRole)) {
         setServerError(t("auth.not_admin") as string);
@@ -90,11 +105,18 @@ export default function SignIn() {
         refreshToken: res.refreshToken,
         user: { ...res.user, role: normalizedRole },
       });
+      setRequireOtp(false);
       navigate(from, { replace: true });
     } catch (e: unknown) {
       const code = getErrorCode(e);
       if (code === "INVALID_CREDENTIALS") {
         setServerError(t("errors.INVALID_CREDENTIALS", "Incorrect email or password"));
+      } else if (code === "AUTH_2FA_REQUIRED") {
+        setRequireOtp(true);
+        setServerError(t("auth.otp_required", "Two-factor code required. Check your authenticator app."));
+      } else if (code === "INVALID_OTP") {
+        setRequireOtp(true);
+        setServerError(t("auth.invalid_otp", "Invalid 2FA code. Try again."));
       } else {
         setServerError(getAdminErrorMessage(e, t, t("auth.login_failed", "Login failed. Check your phone and password.")));
       }
@@ -151,6 +173,23 @@ export default function SignIn() {
               {renderError(errors.password?.message)}
               <p className="text-xs text-muted-foreground mt-1">{t("validation.password")}</p>
             </div>
+
+            {requireOtp && (
+              <div>
+                <label className="block text-sm mb-1">
+                  {t("auth.otp_label", "2FA code")} <span className="text-rose-500">*</span>
+                </label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder={t("auth.otp_placeholder", "Enter your 6-digit code") as string}
+                  maxLength={6}
+                  className={`h-11 ${i18n.language === "ar" ? "text-right" : ""}`}
+                  {...register("otp" as any)}
+                />
+                <p className="text-xs text-muted-foreground mt-1">{t("auth.otp_hint", "Open your authenticator app to view the code.")}</p>
+              </div>
+            )}
 
             <Button type="submit" className="w-full h-11" disabled={loading}>
               {loading ? t("auth.signing_in") : t("auth.sign_in_btn")}
