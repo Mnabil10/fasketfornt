@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
 import { useAuth } from "../../auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
+import { LOGIN_PATH } from "../../lib/logout";
 
 export default function Forbidden() {
   const { t } = useTranslation();
@@ -16,8 +17,13 @@ export default function Forbidden() {
         <h1 className="text-2xl font-bold mb-2">{t("auth.forbidden_title")}</h1>
         <p className="text-gray-600 mb-6">{t("auth.forbidden_desc")}</p>
         <div className="flex gap-3 justify-center">
-          <Button variant="outline" onClick={() => navigate("/signin")}>{t("auth.back_to_login")}</Button>
-          <Button variant="destructive" onClick={() => { signOut(); navigate("/signin", { replace: true }); }}>
+          <Button variant="outline" onClick={() => navigate(LOGIN_PATH)}>{t("auth.back_to_login")}</Button>
+          <Button
+            variant="destructive"
+            onClick={async () => {
+              await signOut();
+            }}
+          >
             {t("auth.logout")}
           </Button>
         </div>

@@ -8,22 +8,27 @@ import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/dialog";
+import { Switch } from "../../ui/switch";
 import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
 import { EmptyState } from "../common/EmptyState";
 import { ErrorState } from "../common/ErrorState";
-import { Search, Truck, Filter, RefreshCcw, Receipt } from "lucide-react";
+import { Search, Truck, Filter, RefreshCcw, Receipt, Clock, PhoneCall, MessageCircle, Shield } from "lucide-react";
 import dayjs from "dayjs";
 import { toast } from "sonner";
 import { ORDERS_QUERY_KEY, useOrdersAdmin } from "../../../hooks/api/useOrdersAdmin";
 import { useDeliveryDrivers } from "../../../hooks/api/useDeliveryDrivers";
 import { useAssignDriver } from "../../../hooks/api/useAssignDriver";
 import { useOrderReceipt } from "../../../hooks/api/useOrderReceipt";
-import { getOrder, updateOrderStatus } from "../../../services/orders.service";
+import { cancelOrder, getOrder, getOrderHistory, getOrderTransitions, updateOrderStatus } from "../../../services/orders.service";
+import { fetchAutomationEvents } from "../../../services/automation.service";
 import { getAdminErrorMessage } from "../../../lib/errors";
-import type { OrderDetail, OrderFilters, OrderStatus } from "../../../types/order";
-import { fmtEGP } from "../../../lib/money";
+import { usePermissions } from "../../../auth/permissions";
+import type { OrderDetail, OrderFilters, OrderStatus, OrderHistoryEntry, OrderTransition } from "../../../types/order";
+import { fmtCurrency } from "../../../lib/money";
+import { maskPhone } from "../../../lib/pii";
 import { useDebounce } from "../../../hooks/useDebounce";
 import { OrderReceiptView } from "./OrderReceiptView";
+import { collectAllowedTargets, isTransitionAllowed } from "../../../lib/order-transitions";
 
 type OrdersManagementProps = {
   initialOrderId?: string | null;
@@ -32,6 +37,7 @@ type OrdersManagementProps = {
 export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const perms = usePermissions();
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialOrderId ?? null);
   const [detailOpen, setDetailOpen] = useState<boolean>(Boolean(initialOrderId));
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -49,6 +55,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     page,
     pageSize,
   });
+  const [stuckOnly, setStuckOnly] = useState(false);
 
   const debouncedCustomer = useDebounce(filters.customer || "", 300);
   const debouncedDriverSearch = useDebounce(driverSearch, 300);
@@ -76,6 +83,19 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   const total = ordersQuery.data?.total || 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
+  const isStuck = (order: OrderDetail | OrderFilters & any) => {
+    const updated = order.updatedAt || order.createdAt;
+    if (!updated) return false;
+    const minutes = dayjs().diff(dayjs(updated), "minute");
+    return minutes >= 30 && !["DELIVERED", "CANCELED"].includes((order.status || "").toUpperCase());
+  };
+
+  const visibleItems = useMemo(() => {
+    const base = stuckOnly ? items.filter((o) => isStuck(o)) : items;
+    const stuckFirst = [...base].sort((a, b) => Number(isStuck(b)) - Number(isStuck(a)));
+    return stuckFirst;
+  }, [items, stuckOnly]);
+
   const driverFilters = useMemo(
     () => ({ isActive: true, search: debouncedDriverSearch || undefined, page: 1, pageSize: 100 }),
     [debouncedDriverSearch]
@@ -89,14 +109,43 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     enabled: Boolean(selectedOrderId),
   });
 
+  const transitionsQuery = useQuery({
+    queryKey: [...ORDERS_QUERY_KEY, "transitions", selectedOrderId],
+    queryFn: () => (selectedOrderId ? getOrderTransitions(selectedOrderId) : []),
+    enabled: Boolean(selectedOrderId),
+  });
+
+  const historyQuery = useQuery({
+    queryKey: [...ORDERS_QUERY_KEY, "history", selectedOrderId],
+    queryFn: () => (selectedOrderId ? getOrderHistory(selectedOrderId) : []),
+    enabled: perms.canViewHistory && Boolean(selectedOrderId),
+  });
+
   const receiptQuery = useOrderReceipt(selectedOrderId || undefined, {
-    enabled: receiptOpen && detailOpen && Boolean(selectedOrderId),
+    enabled: detailOpen && Boolean(selectedOrderId),
+  });
+
+  const automationQuery = useQuery({
+    queryKey: [...ORDERS_QUERY_KEY, "automation", selectedOrderId, detailQuery.data?.code],
+    queryFn: () => fetchAutomationEvents({ q: detailQuery.data?.code || selectedOrderId || "" }),
+    enabled: perms.canViewAutomation && detailOpen && Boolean(detailQuery.data?.code || selectedOrderId),
   });
 
   const assignDriverMutation = useAssignDriver(selectedOrderId || "");
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, to }: { id: string; to: OrderStatus }) => updateOrderStatus(id, { to }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: [...ORDERS_QUERY_KEY, "transitions", selectedOrderId] });
+      queryClient.invalidateQueries({ queryKey: [...ORDERS_QUERY_KEY, "history", selectedOrderId] });
+    },
+  });
+  const cancelMutation = useMutation({
+    mutationFn: ({ id, note }: { id: string; note?: string }) => cancelOrder(id, note),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: [...ORDERS_QUERY_KEY, "detail", selectedOrderId] });
+    },
   });
 
   useEffect(() => {
@@ -126,15 +175,33 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
 
   const parentRef = useRef<HTMLDivElement | null>(null);
   const rowVirtualizer = useVirtualizer({
-    count: items.length,
+    count: visibleItems.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 72,
     overscan: 6,
   });
 
-  const statusOptions: OrderStatus[] = ["PENDING", "PROCESSING", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELED"];
+  const baseStatuses: OrderStatus[] = ["PENDING", "PROCESSING", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELED"];
+  const statusFilterOptions = baseStatuses;
+  const allowedTargets = useMemo(
+    () => collectAllowedTargets(detailQuery.data?.allowedTransitions, transitionsQuery.data as OrderTransition[] | undefined),
+    [detailQuery.data?.allowedTransitions, transitionsQuery.data]
+  );
+
+  const allowedStatusList = useMemo(() => {
+    const set = new Set<OrderStatus>(baseStatuses);
+    allowedTargets.forEach((s) => set.add(s));
+    (transitionsQuery.data || []).forEach((t) => {
+      set.add((t as OrderTransition).from);
+      set.add((t as OrderTransition).to);
+    });
+    return Array.from(set);
+  }, [allowedTargets, transitionsQuery.data]);
+
+  const canTransitionTo = (target: OrderStatus) => isTransitionAllowed(target, allowedTargets);
+
   const assignNotAllowed = detailQuery.data?.status
-    ? ["DELIVERED", "CANCELED"].includes(detailQuery.data.status)
+    ? ["DELIVERED", "CANCELED"].includes((detailQuery.data.status || "").toUpperCase())
     : false;
 
   const statusBadge = (status: OrderStatus) => {
@@ -158,6 +225,10 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
 
   const onAssignDriver = async () => {
     if (!selectedOrderId || !selectedDriverIdToAssign) return;
+    if (!perms.canAssignDriver) {
+      toast.error(t("orders.permission.assign", "You do not have permission to assign drivers."));
+      return;
+    }
     try {
       await assignDriverMutation.mutateAsync({ orderId: selectedOrderId, driverId: selectedDriverIdToAssign });
       toast.success(t("orders.driverAssigned", "Driver assigned"));
@@ -170,9 +241,34 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
 
   const onStatusChange = async (to: OrderStatus) => {
     if (!selectedOrderId) return;
+    if (!perms.canUpdateOrders) {
+      toast.error(t("orders.permission.update", "You do not have permission to update orders."));
+      return;
+    }
+    if (!canTransitionTo(to)) {
+      toast.error(t("orders.transition_blocked", "Transition not allowed by backend policy"));
+      return;
+    }
+    if (detailQuery.data?.status === to) return;
     try {
       await updateStatusMutation.mutateAsync({ id: selectedOrderId, to });
       toast.success(t("orders.updated", "Order updated"));
+      detailQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
+    } catch (error) {
+      toast.error(getAdminErrorMessage(error, t));
+    }
+  };
+
+  const onCancelOrder = async () => {
+    if (!selectedOrderId) return;
+    if (!perms.canCancelOrder) {
+      toast.error(t("orders.permission.cancel", "You do not have permission to cancel orders."));
+      return;
+    }
+    try {
+      await cancelMutation.mutateAsync({ id: selectedOrderId });
+      toast.success(t("orders.canceled", "Order canceled"));
       detailQuery.refetch();
       queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
     } catch (error) {
@@ -216,7 +312,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -241,7 +337,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t("common.all", "All")}</SelectItem>
-                {statusOptions.map((s) => (
+                {statusFilterOptions.map((s) => (
                   <SelectItem key={s} value={s}>
                     {statusBadge(s).label}
                   </SelectItem>
@@ -267,6 +363,20 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                 ))}
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="stuckOnly"
+                checked={stuckOnly}
+                onCheckedChange={(checked) => {
+                  setPage(1);
+                  setStuckOnly(Boolean(checked));
+                }}
+              />
+              <label htmlFor="stuckOnly" className="text-sm flex items-center gap-1">
+                <Clock className="w-4 h-4" />
+                {t("orders.stuckOnly", "Stuck > 30m")}
+              </label>
+            </div>
             <Button variant="outline" className="w-full md:w-auto" onClick={resetFilters}>
               {t("common.resetFilters", "Reset filters")}
             </Button>
@@ -306,8 +416,10 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                 <div ref={parentRef} style={{ height: "60vh", overflow: "auto", position: "relative" }}>
                   <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
                     {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                      const order = items[virtualRow.index];
+                      const order = visibleItems[virtualRow.index];
                       const meta = statusBadge(order.status);
+                      const phone = perms.canViewPII ? order.customer?.phone : maskPhone(order.customer?.phone);
+                      const driverPhone = perms.canViewPII ? order.driver?.phone : maskPhone(order.driver?.phone);
                       return (
                         <div
                           key={order.id}
@@ -318,22 +430,26 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                           <div className="font-semibold">{order.code || order.id}</div>
                           <div className="space-y-0.5">
                             <p className="font-medium">{order.customer?.name}</p>
-                            <p className="text-xs text-muted-foreground">{order.customer?.phone}</p>
+                            <p className="text-xs text-muted-foreground">{phone}</p>
                           </div>
                           <div className="text-sm text-muted-foreground">{dayjs(order.createdAt).format("DD MMM HH:mm")}</div>
-                          <div className="font-semibold">{fmtEGP(order.totalCents)}</div>
+                          <div className="font-semibold">{fmtCurrency(order.totalCents, order.currency || "EGP")}</div>
                           <div className="text-sm text-muted-foreground">
                             {order.driver?.fullName ? (
                               <span className="inline-flex items-center gap-1">
                                 <Truck className="w-4 h-4" />
                                 {order.driver.fullName}
+                                {driverPhone ? ` (${driverPhone})` : ""}
                               </span>
                             ) : (
                               "-"
                             )}
                           </div>
                           <div className="text-right">
-                            <Badge className={meta.color}>{meta.label}</Badge>
+                            <div className="flex items-center justify-end gap-2">
+                              {isStuck(order) && <Badge variant="outline">{t("orders.stuck", "Stuck")}</Badge>}
+                              <Badge className={meta.color}>{meta.label}</Badge>
+                            </div>
                           </div>
                         </div>
                       );
@@ -342,8 +458,10 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                 </div>
               </div>
               <div className="md:hidden space-y-3 p-4">
-                {items.map((order) => {
+                {visibleItems.map((order) => {
                   const meta = statusBadge(order.status);
+                  const phone = perms.canViewPII ? order.customer?.phone : maskPhone(order.customer?.phone);
+                  const driverPhone = perms.canViewPII ? order.driver?.phone : maskPhone(order.driver?.phone);
                   return (
                     <div
                       key={order.id}
@@ -364,15 +482,24 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                         <div>
                           <p className="text-muted-foreground">{t("orders.customer")}</p>
                           <p className="font-medium">{order.customer?.name || "-"}</p>
+                          <p className="text-xs text-muted-foreground">{phone}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-muted-foreground">{t("orders.amount")}</p>
-                          <p className="font-semibold">{fmtEGP(order.totalCents)}</p>
+                          <p className="font-semibold">{fmtCurrency(order.totalCents, order.currency || "EGP")}</p>
                         </div>
                         <div className="col-span-2 flex items-center gap-2 text-xs text-muted-foreground">
                           <Truck className="w-4 h-4" />
-                          <span>{order.driver?.fullName || t("orders.driver", "Driver")} {order.driver?.phone ? `• ${order.driver.phone}` : ""}</span>
+                          <span>
+                            {order.driver?.fullName || t("orders.driver", "Driver")}
+                            {driverPhone ? ` - ${driverPhone}` : ""}
+                          </span>
                         </div>
+                        {isStuck(order) && (
+                          <div className="col-span-2">
+                            <Badge variant="outline">{t("orders.stuck", "Stuck > 30m")}</Badge>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -432,7 +559,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                     </div>
                     <div className="flex justify-between">
                       <span>{t("orders.phone", "Phone")}</span>
-                      <span>{detailQuery.data.customer?.phone}</span>
+                      <span>{perms.canViewPII ? detailQuery.data.customer?.phone : maskPhone(detailQuery.data.customer?.phone)}</span>
                     </div>
                   </CardContent>
                 </Card>
@@ -447,13 +574,19 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {statusOptions.map((s) => (
-                          <SelectItem key={s} value={s}>
+                        {allowedStatusList.map((s) => (
+                          <SelectItem key={s} value={s} disabled={!canTransitionTo(s as OrderStatus)}>
                             {statusBadge(s).label}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {!perms.canUpdateOrders && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Shield className="w-3 h-3" />
+                        {t("orders.permission.update", "You do not have permission to update orders.")}
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -502,7 +635,8 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                     )}
                     {detailQuery.data.driver ? (
                       <div className="text-sm text-muted-foreground">
-                        {t("orders.currentDriver", "Current:")} {detailQuery.data.driver.fullName} - {detailQuery.data.driver.phone}
+                        {t("orders.currentDriver", "Current:")} {detailQuery.data.driver.fullName} -{" "}
+                        {perms.canViewPII ? detailQuery.data.driver.phone : maskPhone(detailQuery.data.driver.phone)}
                       </div>
                     ) : (
                       <div className="text-sm text-muted-foreground">{t("orders.noDriver", "No driver assigned")}</div>
@@ -511,20 +645,132 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                 </Card>
               </div>
 
-              <Card>
-                <CardHeader className="flex items-center justify-between">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader className="flex items-center justify-between">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Receipt className="w-4 h-4" />
+                      {t("orders.receipt", "Receipt")}
+                    </CardTitle>
+                    <Button size="sm" variant="outline" onClick={() => setReceiptOpen(true)} disabled={!selectedOrderId}>
+                      {t("orders.viewReceipt", "View receipt")}
+                    </Button>
+                  </CardHeader>
+                  <CardContent>
+                    <OrderReceiptView receipt={receiptQuery.data || null} isLoading={receiptQuery.isLoading} />
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <MessageCircle className="w-4 h-4" />
+                      {t("orders.automation", "Automation / Notifications")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {automationQuery.isLoading ? (
+                      <AdminTableSkeleton rows={2} columns={3} />
+                    ) : automationQuery.isError ? (
+                      <ErrorState
+                        message={getAdminErrorMessage(automationQuery.error, t)}
+                        onRetry={() => automationQuery.refetch()}
+                      />
+                    ) : automationQuery.data?.items?.length ? (
+                      <div className="space-y-2">
+                        {automationQuery.data.items.slice(0, 4).map((evt) => (
+                          <div key={evt.id} className="flex items-start justify-between gap-3 border-b last:border-0 pb-2">
+                            <div>
+                              <p className="font-medium text-sm">{evt.type}</p>
+                              <p className="text-xs text-muted-foreground">{evt.correlationId || detailQuery.data.code}</p>
+                              {evt.lastErrorSnippet && (
+                                <p className="text-xs text-red-600 line-clamp-2">{evt.lastErrorSnippet}</p>
+                              )}
+                            </div>
+                            <Badge variant={evt.status === "FAILED" || evt.status === "DEAD" ? "destructive" : "outline"}>
+                              {evt.status}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">{t("orders.no_automation", "No automation events found")}</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader>
                   <CardTitle className="text-sm flex items-center gap-2">
-                    <Receipt className="w-4 h-4" />
-                    {t("orders.receipt", "Receipt")}
+                    <Clock className="w-4 h-4" />
+                    {t("orders.history", "Status history")}
                   </CardTitle>
-                  <Button size="sm" variant="outline" onClick={() => setReceiptOpen(true)} disabled={!selectedOrderId}>
-                    {t("orders.viewReceipt", "View receipt")}
-                  </Button>
                 </CardHeader>
-                <CardContent className="text-sm text-muted-foreground">
-                  {t("orders.receiptHint", "Open the receipt to view items, delivery fees, and print it.")}
-                </CardContent>
-              </Card>
+                <CardContent>
+                  {!perms.canViewHistory ? (
+                    <p className="text-sm text-muted-foreground">{t("orders.permission.history", "You do not have permission to view history.")}</p>
+                  ) : historyQuery.isLoading ? (
+                      <AdminTableSkeleton rows={3} columns={2} />
+                    ) : historyQuery.isError ? (
+                      <ErrorState
+                        message={getAdminErrorMessage(historyQuery.error, t, t("orders.history_error", "Unable to load history"))}
+                        onRetry={() => historyQuery.refetch()}
+                      />
+                    ) : (historyQuery.data || []).length ? (
+                      <ul className="space-y-2">
+                        {(historyQuery.data as OrderHistoryEntry[]).map((entry) => (
+                          <li key={entry.id} className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-medium text-sm">
+                                {entry.from ? `${entry.from} → ${entry.to}` : entry.to}
+                              </p>
+                              {entry.note && <p className="text-xs text-muted-foreground">{entry.note}</p>}
+                            </div>
+                            <div className="text-xs text-muted-foreground text-right">
+                              <p>{dayjs(entry.at).format("DD MMM HH:mm")}</p>
+                              {entry.actor && <p>{entry.actor}</p>}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <EmptyState title={t("orders.no_history", "No history yet")} />
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex items-center justify-between">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <PhoneCall className="w-4 h-4" />
+                      {t("orders.actions", "Actions")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!perms.canCancelOrder || cancelMutation.isPending}
+                        onClick={onCancelOrder}
+                        title={!perms.canCancelOrder ? t("orders.permission.cancel", "No permission") : undefined}
+                      >
+                        {cancelMutation.isPending ? t("common.saving", "Saving...") : t("orders.cancel", "Cancel")}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => driversQuery.refetch()}>
+                        {t("common.refresh", "Refresh")}
+                      </Button>
+                    </div>
+                    {!perms.canCancelOrder && (
+                      <p className="text-xs text-muted-foreground">
+                        {t("orders.permission.cancel", "You do not have permission to cancel orders.")}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           )}
         </DialogContent>

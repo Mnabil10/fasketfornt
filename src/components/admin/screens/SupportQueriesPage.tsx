@@ -1,0 +1,144 @@
+import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
+import dayjs from "dayjs";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
+import { Input } from "../../ui/input";
+import { Button } from "../../ui/button";
+import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
+import { ErrorState } from "../common/ErrorState";
+import { EmptyState } from "../common/EmptyState";
+import { fetchSupportQueries } from "../../../services/support.service";
+import { getAdminErrorMessage } from "../../../lib/errors";
+import { maskPhone } from "../../../lib/pii";
+import { usePermissions } from "../../../auth/permissions";
+import { useNavigate } from "react-router-dom";
+import { Badge } from "../../ui/badge";
+
+export function SupportQueriesPage() {
+  const { t } = useTranslation();
+  const perms = usePermissions();
+  const navigate = useNavigate();
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
+
+  const query = useQuery({
+    queryKey: ["support-queries", { phone, code, page }],
+    queryFn: () => fetchSupportQueries({ phone: phone || undefined, code: code || undefined, page, pageSize }),
+    enabled: perms.canViewSupport,
+    keepPreviousData: true,
+  });
+
+  if (!perms.canViewSupport) {
+    return (
+      <div className="p-6">
+        <ErrorState message={t("support.permission", "You do not have access to support queries.")} />
+      </div>
+    );
+  }
+
+  const items = query.data?.items || [];
+  const total = query.data?.total || 0;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+
+  const masked = (value?: string | null) => (perms.canViewPII ? value || "" : maskPhone(value || ""));
+
+  return (
+    <div className="p-4 lg:p-6 space-y-4">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">{t("support.title", "Support Queries")}</h1>
+          <p className="text-muted-foreground">{t("support.subtitle", "Audit support bot lookups and quick order access")}</p>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("common.search", "Search")}</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <Input placeholder={t("support.phone_placeholder", "Phone")} value={phone} onChange={(e) => { setPhone(e.target.value); setPage(1); }} />
+          <Input placeholder={t("support.code_placeholder", "Order code")} value={code} onChange={(e) => { setCode(e.target.value); setPage(1); }} />
+          <Button variant="outline" onClick={() => query.refetch()}>{t("common.refresh", "Refresh")}</Button>
+          <Button variant="outline" onClick={() => { setPhone(""); setCode(""); setPage(1); }}>{t("common.resetFilters", "Reset filters")}</Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="hidden md:grid grid-cols-[1fr,1fr,1fr,1fr,1fr,0.8fr] text-xs font-medium text-muted-foreground px-4 py-2 border-b">
+            <span>{t("support.date", "Date")}</span>
+            <span>{t("support.phone", "Phone")}</span>
+            <span>{t("support.intent", "Intent")}</span>
+            <span>{t("support.order", "Order code")}</span>
+            <span>{t("support.response", "Response")}</span>
+            <span>{t("support.status", "Status")}</span>
+          </div>
+          {query.isLoading ? (
+            <div className="p-4">
+              <AdminTableSkeleton rows={5} columns={6} />
+            </div>
+          ) : query.isError ? (
+            <ErrorState message={getAdminErrorMessage(query.error, t)} onRetry={() => query.refetch()} />
+          ) : !items.length ? (
+            <div className="p-4">
+              <EmptyState title={t("support.empty", "No support queries found")} />
+            </div>
+          ) : (
+            <>
+              <div className="hidden md:block">
+                {items.map((row) => (
+                  <div key={row.id} className="grid grid-cols-[1fr,1fr,1fr,1fr,1fr,0.8fr] px-4 py-3 border-b text-sm items-center">
+                    <span>{dayjs(row.createdAt).format("DD MMM YYYY HH:mm")}</span>
+                    <span>{masked(row.phone)}</span>
+                    <span>{row.intent || "-"}</span>
+                    <span className="underline cursor-pointer" onClick={() => row.orderCode && navigate(`/orders/${row.orderCode}`)}>
+                      {row.orderCode || "-"}
+                    </span>
+                    <span className="text-xs text-muted-foreground line-clamp-2">{row.responseSnippet || "-"}</span>
+                    <Badge variant="outline">{row.status || "-"}</Badge>
+                  </div>
+                ))}
+              </div>
+
+              <div className="md:hidden space-y-3 p-4">
+                {items.map((row) => (
+                  <div key={row.id} className="rounded-lg border bg-card p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold text-sm">{row.intent || "-"}</p>
+                        <p className="text-xs text-muted-foreground">{dayjs(row.createdAt).format("DD MMM HH:mm")}</p>
+                      </div>
+                      <Badge variant="outline">{row.status || "-"}</Badge>
+                    </div>
+                    <p className="text-sm">{t("support.phone", "Phone")}: {masked(row.phone)}</p>
+                    <p className="text-xs text-muted-foreground line-clamp-2">{row.responseSnippet || "-"}</p>
+                    {row.orderCode && (
+                      <Button variant="outline" size="sm" onClick={() => navigate(`/orders/${row.orderCode}`)} className="w-full">
+                        {t("support.open_order", "Open order")}
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
+                <div>{t("common.pagination", { defaultValue: "Page {{page}} of {{count}}", page, count: pageCount })}</div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                    {t("common.prev", "Prev")}
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={page >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>
+                    {t("common.next", "Next")}
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

@@ -90,6 +90,8 @@ type OrderDto = {
   note?: string | null;
   notes?: string | null;
   metadata?: Record<string, unknown>;
+  currency?: string;
+  allowedTransitions?: OrderStatus[];
 };
 
 type OrderReceiptDto = {
@@ -199,6 +201,7 @@ function normalizeOrderSummary(order: OrderDto): Order {
     deliveryZone: normalizeZone(order.deliveryZone ?? order.zone ?? null),
     driver: normalizeDriver(order.driver),
     paymentMethod: order.paymentMethod ?? null,
+    currency: order.currency,
   };
 }
 
@@ -213,6 +216,8 @@ function normalizeOrderDetail(order: OrderDto): OrderDetail {
     address: order.address ?? null,
     notes: order.note ?? order.notes ?? null,
     metadata: order.metadata,
+    currency: order.currency,
+    allowedTransitions: order.allowedTransitions,
   };
 }
 
@@ -333,6 +338,43 @@ export async function updateOrderStatus(id: string, body: OrderStatusPayload) {
 export async function assignDriverToOrder(id: string, driverId: string) {
   const { data } = await api.patch(`/api/v1/admin/orders/${id}/assign-driver`, { driverId });
   return data;
+}
+
+export async function cancelOrder(id: string, note?: string) {
+  const { data } = await api.post(`/api/v1/admin/orders/${id}/cancel`, note ? { note } : {});
+  return data;
+}
+
+export async function getOrderHistory(id: string) {
+  const { data } = await api.get<{ items: Array<{ id: string; at: string; from?: string; to: string; actor?: string; note?: string }> }>(
+    `/api/v1/admin/orders/${id}/history`
+  );
+  return (data?.items || []).map((entry) => ({
+    id: entry.id,
+    at: entry.at,
+    from: entry.from as OrderStatus | undefined,
+    to: entry.to as OrderStatus,
+    actor: entry.actor,
+    note: entry.note,
+  }));
+}
+
+export async function getOrderTransitions(id: string) {
+  const { data } = await api.get<Array<{ from: string; to: string; label?: string; reason?: string }>>(
+    `/api/v1/admin/orders/${id}/transitions`
+  );
+  return (data || []).map((entry) => ({
+    from: entry.from as OrderStatus,
+    to: entry.to as OrderStatus,
+    label: entry.label,
+    reason: entry.reason,
+  }));
+}
+
+export async function lookupOrder(params: { code?: string; phone?: string }) {
+  const query = buildQueryParams(params);
+  const { data } = await api.get<OrderDto | null>("/api/v1/admin/orders/lookup", { params: query });
+  return data ? normalizeOrderDetail(data) : null;
 }
 
 export async function getOrderReceipt(orderId: string): Promise<OrderReceipt> {

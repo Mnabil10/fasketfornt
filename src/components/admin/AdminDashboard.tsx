@@ -1,6 +1,7 @@
 // src/components/admin/AdminDashboard.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useMutation } from "@tanstack/react-query";
 import { SidebarProvider } from "../ui/sidebar";
 import { Sheet, SheetContent } from "../ui/sheet";
 import { Input } from "../ui/input";
@@ -40,18 +41,26 @@ const ProductsManagement = React.lazy(() =>
 );
 import { CategoriesManagement } from "./screens/CategoriesManagement";
 import { FasketProducts } from "./screens/FasketProducts";
-import { FasketOrders } from "./screens/FasketOrders";
+import { OrdersManagement } from "./screens/OrdersManagement";
 import { SettingsManagement } from "./screens/SettingsManagement";
 import { CouponsManagement } from "./screens/CouponsManagement";
 import { HotOffersList } from "./screens/HotOffers";
 import { DeliveryDriversManagement } from "./screens/DeliveryDriversManagement";
 import { DeliveryZonesManagement } from "./screens/DeliveryZonesManagement";
 import { CustomersManagement } from "./screens/CustomersManagement";
+import { AutomationOutboxPage } from "./screens/AutomationOutboxPage";
+import { ProfitReportsPage } from "./screens/ProfitReportsPage";
+import { SupportQueriesPage } from "./screens/SupportQueriesPage";
 import { useTranslation } from "react-i18next";
 import BrandLogo from "../common/BrandLogo";
 import { fetchDashboard, type DashboardSummary } from "../../services/dashboard.service";
 import { useAuth } from "../../auth/AuthProvider";
+import { usePermissions } from "../../auth/permissions";
+import RequireCapability from "../../auth/RequireCapability";
 import { useDirection } from "../../hooks/useDirection";
+import { lookupOrder } from "../../services/orders.service";
+import { toast } from "sonner";
+import { getAdminErrorMessage } from "../../lib/errors";
 
 export type AdminScreen =
   | "dashboard"
@@ -62,7 +71,10 @@ export type AdminScreen =
   | "customers"
   | "coupons"
   | "settings"
-  | "delivery-drivers";
+  | "delivery-drivers"
+  | "automation-outbox"
+  | "reports"
+  | "support";
 
 export interface AdminState {
   currentScreen: AdminScreen;
@@ -79,14 +91,16 @@ export type ScreenProps = {
 
 export function AdminDashboard() {
   const { t, i18n } = useTranslation();
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
+  const perms = usePermissions();
   useDirection();
   const location = useLocation();
   const navigate = useNavigate();
-  const defaultScreen: AdminScreen = isAdmin ? "dashboard" : "products";
+  const defaultScreen: AdminScreen = isAdmin ? "dashboard" : perms.canViewProfit ? "reports" : "products";
   const pathSegments = useMemo(() => location.pathname.replace(/^\/+/, "").split("/").filter(Boolean), [location.pathname]);
   const derivedScreen: AdminScreen =
-    (pathSegments[0] as AdminScreen | undefined) && (["dashboard", "categories", "products", "hot-offers", "orders", "customers", "coupons", "settings", "delivery-drivers"] as const).includes(
+    (pathSegments[0] as AdminScreen | undefined) &&
+    (["dashboard", "categories", "products", "hot-offers", "orders", "customers", "coupons", "settings", "delivery-drivers", "automation-outbox", "reports", "support"] as const).includes(
       pathSegments[0] as AdminScreen
     )
       ? (pathSegments[0] as AdminScreen)
@@ -96,15 +110,33 @@ export function AdminDashboard() {
     currentScreen: defaultScreen,
   }));
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [lookupTerm, setLookupTerm] = useState("");
+
+  const lookupMutation = useMutation({
+    mutationFn: (term: string) => lookupOrder({ code: term, phone: term }),
+    onSuccess: (order) => {
+      if (order?.id) {
+        navigate(`/orders/${order.id}`);
+        updateAdminState({ currentScreen: "orders", selectedOrder: order.id });
+      } else {
+        toast.error(t("orders.lookup_not_found", "No order found"));
+      }
+    },
+    onError: (error) => toast.error(getAdminErrorMessage(error, t, t("orders.lookup_failed", "Lookup failed"))),
+  });
 
   const role = (user?.role || "").toUpperCase();
-  const accessibleScreens = useMemo<AdminScreen[]>(
-    () =>
-      role === "ADMIN"
-        ? ["dashboard", "categories", "products", "hot-offers", "orders", "customers", "coupons", "settings", "delivery-drivers"]
-        : ["categories", "products", "hot-offers", "orders"],
-    [role]
-  );
+  const accessibleScreens = useMemo<AdminScreen[]>(() => {
+    const base: AdminScreen[] = ["categories", "products", "hot-offers", "orders"];
+    const adminExtras: AdminScreen[] = ["dashboard", "customers", "coupons", "settings", "delivery-drivers"];
+    const automationScreens: AdminScreen[] = perms.canViewAutomation ? ["automation-outbox"] : [];
+    const profitScreens: AdminScreen[] = perms.canViewProfit ? ["reports"] : [];
+    const supportScreens: AdminScreen[] = perms.canViewSupport ? ["support"] : [];
+    if (role === "ADMIN") return [...base, ...adminExtras, ...automationScreens, ...profitScreens, ...supportScreens];
+    if (role === "OPS_MANAGER") return [...base, "dashboard", ...automationScreens, ...supportScreens];
+    if (role === "FINANCE") return ["dashboard", ...profitScreens];
+    return [...base, ...automationScreens, ...profitScreens, ...supportScreens];
+  }, [role, perms.canViewAutomation, perms.canViewProfit, perms.canViewSupport]);
 
   const screenToPath = (screen: AdminScreen) => (screen === "dashboard" ? "/" : `/${screen}`);
 
@@ -206,6 +238,9 @@ export function AdminDashboard() {
       { id: "customers" as const, icon: Users, badge: customersCount },
       { id: "coupons" as const, icon: Ticket, badge: null },
       { id: "settings" as const, icon: Settings, badge: null },
+      { id: "automation-outbox" as const, icon: Bell, badge: null },
+      { id: "reports" as const, icon: LayoutDashboard, badge: null },
+      { id: "support" as const, icon: User, badge: null },
     ] as Array<{ id: AdminScreen; icon: any; badge: number | null }>;
     return all.filter((item) => accessibleScreens.includes(item.id));
   }, [summary, accessibleScreens]);
@@ -220,6 +255,9 @@ export function AdminDashboard() {
     coupons: "Coupons",
     settings: "Settings",
     "delivery-drivers": "Delivery Drivers",
+    "automation-outbox": "Automation Outbox",
+    reports: "Profit Reports",
+    support: "Support",
   };
 
   const labelFor = (id: AdminScreen) => t(`menu.${id}`, { defaultValue: defaultLabels[id] });
@@ -328,7 +366,7 @@ export function AdminDashboard() {
       case "hot-offers":
         return <HotOffersList {...p} />;
       case "orders":
-        return <FasketOrders initialOrderId={secondary} />;
+        return <OrdersManagement initialOrderId={secondary} />;
       case "customers":
         return <CustomersManagement />;
       case "coupons":
@@ -337,6 +375,24 @@ export function AdminDashboard() {
         return <SettingsManagement {...p} initialSection={secondary} />;
       case "delivery-drivers":
         return <DeliveryDriversManagement />;
+      case "automation-outbox":
+        return (
+          <RequireCapability capability="automation:view">
+            <AutomationOutboxPage />
+          </RequireCapability>
+        );
+      case "reports":
+        return (
+          <RequireCapability capability="reports:profit">
+            <ProfitReportsPage />
+          </RequireCapability>
+        );
+      case "support":
+        return (
+          <RequireCapability capability="support:view">
+            <SupportQueriesPage />
+          </RequireCapability>
+        );
       default:
         return <DashboardOverview {...p} />;
     }
@@ -392,6 +448,13 @@ export function AdminDashboard() {
                   />
                   <Input
                     placeholder={t("common.search_placeholder") as string}
+                    value={lookupTerm}
+                    onChange={(e) => setLookupTerm(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && lookupTerm.trim()) {
+                        lookupMutation.mutate(lookupTerm.trim());
+                      }
+                    }}
                     className={`pl-10 w-48 lg:w-64 h-10 bg-[var(--input-background)] border-border rounded-lg ${
                       i18n.language === "ar" ? "pr-10 pl-3 text-right" : ""
                     }`}
@@ -479,10 +542,8 @@ export function AdminDashboard() {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className="text-destructive"
-                      onClick={() => {
-                        localStorage.removeItem("fasket_admin_token");
-                        localStorage.removeItem("fasket_admin_user");
-                        window.location.reload();
+                      onClick={async () => {
+                        await signOut();
                       }}
                     >
                       <LogOut className="w-4 h-4 mr-2" />

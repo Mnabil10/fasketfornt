@@ -4,7 +4,7 @@ import { Card, CardContent } from "../../ui/card";
 import { Button } from "../../ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../ui/table";
 import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
-import { fmtEGP } from "../../../lib/money";
+import { fmtCurrency } from "../../../lib/money";
 import type { OrderReceipt } from "../../../types/order";
 import { Printer, FileDown } from "lucide-react";
 
@@ -25,6 +25,7 @@ export function OrderReceiptView({ receipt, isLoading }: OrderReceiptViewProps) 
     return <p className="text-sm text-muted-foreground">{t("orders.no_receipt", "No receipt available")}</p>;
   }
 
+  const currency = receipt.currency || "EGP";
   const printReceipt = () => window.print();
   const addressParts = [
     receipt.address.label,
@@ -114,29 +115,29 @@ export function OrderReceiptView({ receipt, isLoading }: OrderReceiptViewProps) 
           <CardContent className="p-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span>{t("orders.subtotal", "Subtotal")}</span>
-              <span>{fmtEGP(receipt.subtotalCents)}</span>
+              <span>{fmtCurrency(receipt.subtotalCents, currency)}</span>
             </div>
             {receipt.couponDiscountCents ? (
               <div className="flex justify-between">
                 <span>{t("orders.coupon", "Coupon discount")}</span>
-                <span>-{fmtEGP(receipt.couponDiscountCents)}</span>
+                <span>-{fmtCurrency(receipt.couponDiscountCents, currency)}</span>
               </div>
             ) : null}
             {receipt.loyaltyDiscountCents ? (
               <div className="flex justify-between">
                 <span>{t("orders.loyalty", "Loyalty discount")}</span>
-                <span>-{fmtEGP(receipt.loyaltyDiscountCents)}</span>
+                <span>-{fmtCurrency(receipt.loyaltyDiscountCents, currency)}</span>
               </div>
             ) : null}
             {receipt.shippingFeeCents != null && (
               <div className="flex justify-between">
                 <span>{t("orders.shipping", "Shipping")}</span>
-                <span>{fmtEGP(receipt.shippingFeeCents)}</span>
+                <span>{fmtCurrency(receipt.shippingFeeCents, currency)}</span>
               </div>
             )}
             <div className="flex justify-between text-lg font-bold">
               <span>{t("orders.total", "Total")}</span>
-              <span>{fmtEGP(receipt.totalCents)}</span>
+              <span>{fmtCurrency(receipt.totalCents, currency)}</span>
             </div>
           </CardContent>
         </Card>
@@ -157,8 +158,8 @@ export function OrderReceiptView({ receipt, isLoading }: OrderReceiptViewProps) 
               <TableRow key={item.productId || item.productName}>
                 <TableCell className="font-medium">{item.productName}</TableCell>
                 <TableCell>{item.quantity}</TableCell>
-                <TableCell>{fmtEGP(item.unitPriceCents)}</TableCell>
-                <TableCell className="text-right">{fmtEGP(item.lineTotalCents)}</TableCell>
+                <TableCell>{fmtCurrency(item.unitPriceCents, currency)}</TableCell>
+                <TableCell className="text-right">{fmtCurrency(item.lineTotalCents, currency)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

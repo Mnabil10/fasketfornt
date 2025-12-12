@@ -1,4 +1,5 @@
 import { api } from "../lib/api";
+import { clearTokens, setAccessToken, setRefreshToken } from "../lib/token-storage";
 
 export type LoginResponse = {
   accessToken: string;
@@ -25,6 +26,8 @@ export async function adminLogin(identifier: string, password: string, otp?: str
     }
   );
   if (!data?.accessToken) throw new Error("Login failed");
+  setAccessToken(data.accessToken);
+  if (data.refreshToken) setRefreshToken(data.refreshToken);
   return data;
 }
 
@@ -51,8 +54,21 @@ export async function refreshAccessToken(
   return data;
 }
 
-export function logout() {
-  localStorage.removeItem("fasket_admin_token");
-  localStorage.removeItem("fasket_admin_refresh");
-  localStorage.removeItem("fasket_admin_user");
+export async function logout(refreshToken?: string | null) {
+  try {
+    await api.post(
+      "/api/v1/auth/logout",
+      {},
+      {
+        headers: refreshToken ? { Authorization: `Bearer ${refreshToken}` } : undefined,
+        withCredentials: true,
+      }
+    );
+  } catch {
+    // ignore to ensure local cleanup
+  } finally {
+    clearTokens();
+    sessionStorage.removeItem("fasket_admin_user");
+    localStorage.removeItem("fasket_admin_user");
+  }
 }

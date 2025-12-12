@@ -2,7 +2,7 @@ import type { DeliveryDriver } from "./delivery";
 import type { DeliveryZone } from "./zones";
 import type { PaginatedResponse, PaginatedQuery } from "./common";
 
-export type OrderStatus = "PENDING" | "PROCESSING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "CANCELED";
+export type OrderStatus = "PENDING" | "PROCESSING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "CANCELED" | (string & {});
 
 export type OrderCustomer = {
   id: string;
@@ -47,6 +47,7 @@ export type Order = {
   driver?: DeliveryDriver | null;
   deliveryZone?: DeliveryZone | null;
   paymentMethod?: string | null;
+  currency?: string;
 };
 
 export type OrderSummary = Order;
@@ -60,6 +61,8 @@ export type OrderDetail = Order & {
   address?: OrderAddress | null;
   notes?: string | null;
   metadata?: Record<string, unknown>;
+  currency?: string;
+  allowedTransitions?: OrderStatus[];
 };
 
 export type OrderFilters = PaginatedQuery & {
@@ -81,6 +84,22 @@ export type OrderStatusPayload = {
 };
 
 export type OrdersPaged<T = OrderSummary> = PaginatedResponse<T>;
+
+export type OrderHistoryEntry = {
+  id: string;
+  at: string;
+  from?: OrderStatus;
+  to: OrderStatus;
+  actor?: string | null;
+  note?: string | null;
+};
+
+export type OrderTransition = {
+  from: OrderStatus;
+  to: OrderStatus;
+  label?: string;
+  reason?: string;
+};
 
 export type OrderReceiptCustomer = {
   id: string;

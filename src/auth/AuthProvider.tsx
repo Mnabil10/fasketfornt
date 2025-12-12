@@ -1,8 +1,11 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { onAuthEvent } from "../lib/auth-events";
+import { emitAuthEvent, onAuthEvent } from "../lib/auth-events";
 import { registerNavigator } from "../lib/navigation";
+import { logout as logoutRequest } from "../services/auth.service";
+import { getAccessToken, getRefreshToken, setAccessToken, setRefreshToken } from "../lib/token-storage";
+import { clearAuthState, LOGIN_PATH } from "../lib/logout";
 
 type User = { id: string; name: string; role: string; phone?: string; email?: string } | null;
 
@@ -25,7 +28,7 @@ function normalizeUserRole(u: NonNullable<User>): NonNullable<User> {
 }
 
 function readStoredUser(): User {
-  const raw = localStorage.getItem("fasket_admin_user");
+  const raw = sessionStorage.getItem("fasket_admin_user") ?? localStorage.getItem("fasket_admin_user");
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
@@ -41,35 +44,52 @@ function readStoredUser(): User {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem("fasket_admin_token"));
-  const [refreshToken, setRefreshToken] = useState<string | null>(() => localStorage.getItem("fasket_admin_refresh"));
+  const [token, setToken] = useState<string | null>(() => getAccessToken());
+  const [refreshToken, setRefreshTokenState] = useState<string | null>(() => getRefreshToken());
   const [user, setUser] = useState<User>(() => readStoredUser());
 
   const signIn: AuthContextValue["signIn"] = ({ accessToken, refreshToken, user }) => {
     const normalizedUser = normalizeUserRole(user);
-    localStorage.setItem("fasket_admin_token", accessToken);
-    if (refreshToken) localStorage.setItem("fasket_admin_refresh", refreshToken);
-    localStorage.setItem("fasket_admin_user", JSON.stringify(normalizedUser));
+    setAccessToken(accessToken);
+    if (refreshToken) setRefreshToken(refreshToken);
+    sessionStorage.setItem("fasket_admin_user", JSON.stringify(normalizedUser));
+    localStorage.removeItem("fasket_admin_user");
     setToken(accessToken);
-    setRefreshToken(refreshToken ?? null);
+    setRefreshTokenState(refreshToken ?? null);
     setUser(normalizedUser);
   };
 
-  const signOut = useCallback(() => {
-    localStorage.removeItem("fasket_admin_token");
-    localStorage.removeItem("fasket_admin_refresh");
-    localStorage.removeItem("fasket_admin_user");
-    setToken(null);
-    setRefreshToken(null);
-    setUser(null);
-  }, []);
+  const applyLocalLogout = useCallback(
+    (options: { redirect?: boolean } = {}) => {
+      clearAuthState({ redirect: false });
+      setToken(null);
+      setRefreshTokenState(null);
+      setUser(null);
+      if (options.redirect !== false) {
+        navigate(LOGIN_PATH, { replace: true });
+      }
+    },
+    [navigate]
+  );
+
+  const signOut = useCallback(async () => {
+    const rt = getRefreshToken() ?? refreshToken;
+    try {
+      await logoutRequest(rt);
+    } catch {
+      // Best-effort: still continue with local cleanup
+    } finally {
+      applyLocalLogout();
+      emitAuthEvent("logout");
+    }
+  }, [applyLocalLogout, refreshToken]);
 
   useEffect(() => {
-    const unsubscribe = onAuthEvent("logout", () => signOut());
+    const unsubscribe = onAuthEvent("logout", () => applyLocalLogout());
     const handleStorage = (event: StorageEvent) => {
       if (!event.key || event.key.startsWith("fasket_admin_")) {
-        if (!localStorage.getItem("fasket_admin_token")) {
-          signOut();
+        if (!sessionStorage.getItem("fasket_admin_token") && !localStorage.getItem("fasket_admin_token")) {
+          applyLocalLogout();
         }
       }
     };
@@ -78,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubscribe();
       window.removeEventListener("storage", handleStorage);
     };
-  }, [signOut]);
+  }, [applyLocalLogout]);
 
   useEffect(() => {
     registerNavigator((path, options) => navigate(path, options));

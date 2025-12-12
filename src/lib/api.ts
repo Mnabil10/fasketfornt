@@ -5,6 +5,8 @@ import i18n from "../i18n";
 import { refreshAccessToken } from "../services/auth.service";
 import { emitAuthEvent } from "./auth-events";
 import { navigateTo } from "./navigation";
+import { clearAuthState } from "./logout";
+import { getAccessToken, getRefreshToken, setAccessToken, setRefreshToken } from "./token-storage";
 
 const baseURL = import.meta.env.VITE_API_BASE;
 if (!baseURL) {
@@ -18,15 +20,17 @@ export const api = axios.create({
 
 // attach bearer
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("fasket_admin_token");
+  const token = getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
 // handle 401 with refresh
 let refreshing = false;
-let queue: ((t: string) => void)[] = [];
-const onRefreshed = (t: string) => { queue.forEach((cb) => cb(t)); queue = []; };
+type RefreshQueueItem = { resolve: (token: string) => void; reject: (err: unknown) => void };
+let queue: RefreshQueueItem[] = [];
+const onRefreshed = (t: string) => { queue.forEach(({ resolve }) => resolve(t)); queue = []; };
+const onRefreshFailed = (err: unknown) => { queue.forEach(({ reject }) => reject(err)); queue = []; };
 
 type RetryableConfig = AxiosRequestConfig & { _retry?: boolean };
 
@@ -79,11 +83,8 @@ function normalizeErrorResponse(data: unknown): NormalizedApiError | null {
 }
 
 function hardSignOut() {
-  localStorage.removeItem("fasket_admin_token");
-  localStorage.removeItem("fasket_admin_refresh");
-  localStorage.removeItem("fasket_admin_user");
+  clearAuthState();
   emitAuthEvent("logout");
-  navigateTo("/signin", { replace: true });
 }
 
 api.interceptors.response.use(
@@ -144,19 +145,22 @@ api.interceptors.response.use(
       }
 
       original._retry = true;
-      const rt = localStorage.getItem("fasket_admin_refresh");
+      const rt = getRefreshToken();
       if (!rt) {
         hardSignOut();
         throw err;
       }
 
       if (refreshing) {
-        return new Promise((resolve) => {
-          queue.push((t) => {
-            const headers = { ...(original.headers || {}) } as Record<string, string>;
-            headers.Authorization = `Bearer ${t}`;
-            original.headers = headers;
-            resolve(api(original));
+        return new Promise((resolve, reject) => {
+          queue.push({
+            resolve: (t) => {
+              const headers = { ...(original.headers || {}) } as Record<string, string>;
+              headers.Authorization = `Bearer ${t}`;
+              original.headers = headers;
+              resolve(api(original));
+            },
+            reject,
           });
         });
       }
@@ -164,8 +168,8 @@ api.interceptors.response.use(
       refreshing = true;
       try {
         const { accessToken, refreshToken } = await refreshAccessToken(rt);
-        localStorage.setItem("fasket_admin_token", accessToken);
-        if (refreshToken) localStorage.setItem("fasket_admin_refresh", refreshToken);
+        setAccessToken(accessToken);
+        if (refreshToken) setRefreshToken(refreshToken);
         api.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
         onRefreshed(accessToken);
         const headers = { ...(original.headers || {}) } as Record<string, string>;
@@ -173,6 +177,7 @@ api.interceptors.response.use(
         original.headers = headers;
         return api(original);
       } catch (e) {
+        onRefreshFailed(e);
         toast.error(i18n.t("auth.sessionExpired", "Session expired, please login again"));
         hardSignOut();
         throw e;
