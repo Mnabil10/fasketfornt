@@ -92,10 +92,10 @@ export function SupportQueriesPage() {
                 {items.map((row) => (
                   <div key={row.id} className="grid grid-cols-[1fr,1fr,1fr,1fr,1fr,0.8fr] px-4 py-3 border-b text-sm items-center">
                     <span>{dayjs(row.createdAt).format("DD MMM YYYY HH:mm")}</span>
-                    <span>{masked(row.phone)}</span>
+                    <span>{row.phone ? masked(row.phone) : t("support.unavailable", "Unavailable")}</span>
                     <span>{row.intent || "-"}</span>
-                    <span className="underline cursor-pointer" onClick={() => row.orderCode && navigate(`/orders/${row.orderCode}`)}>
-                      {row.orderCode || "-"}
+                    <span className={row.orderCode ? "underline cursor-pointer" : ""} onClick={() => row.orderCode && navigate(`/orders/${row.orderCode}`)}>
+                      {row.orderCode || t("support.unavailable", "Unavailable")}
                     </span>
                     <span className="text-xs text-muted-foreground line-clamp-2">{row.responseSnippet || "-"}</span>
                     <Badge variant="outline">{row.status || "-"}</Badge>
@@ -113,12 +113,16 @@ export function SupportQueriesPage() {
                       </div>
                       <Badge variant="outline">{row.status || "-"}</Badge>
                     </div>
-                    <p className="text-sm">{t("support.phone", "Phone")}: {masked(row.phone)}</p>
+                    <p className="text-sm">
+                      {t("support.phone", "Phone")}: {row.phone ? masked(row.phone) : t("support.unavailable", "Unavailable")}
+                    </p>
                     <p className="text-xs text-muted-foreground line-clamp-2">{row.responseSnippet || "-"}</p>
-                    {row.orderCode && (
+                    {row.orderCode ? (
                       <Button variant="outline" size="sm" onClick={() => navigate(`/orders/${row.orderCode}`)} className="w-full">
                         {t("support.open_order", "Open order")}
                       </Button>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{t("support.no_order", "Order code unavailable")}</p>
                     )}
                   </div>
                 ))}

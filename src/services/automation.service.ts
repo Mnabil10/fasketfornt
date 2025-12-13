@@ -11,6 +11,7 @@ export type AutomationEvent = {
   attempts: number;
   lastHttpStatus?: number | null;
   lastErrorSnippet?: string | null;
+  lastResponseSnippet?: string | null;
   correlationId?: string | null;
   dedupeKey?: string | null;
   orderCode?: string | null;
@@ -50,7 +51,8 @@ function normalizeAutomationEvent(event: any): AutomationEvent {
     status: (status as AutomationStatus | string) ?? "PENDING",
     attempts: toNumber(event?.attempts ?? event?.retryCount),
     lastHttpStatus: event?.lastHttpStatus ?? event?.responseStatus ?? null,
-    lastErrorSnippet: event?.lastErrorSnippet ?? event?.lastResponseBodySnippet ?? event?.lastError ?? null,
+    lastErrorSnippet: event?.lastErrorSnippet ?? event?.lastError ?? null,
+    lastResponseSnippet: event?.lastResponseSnippet ?? event?.lastResponseBodySnippet ?? null,
     correlationId: event?.correlationId ?? event?.correlation ?? event?.traceId ?? null,
     dedupeKey: event?.dedupeKey ?? event?.reference ?? null,
     orderCode: event?.orderCode ?? event?.payload?.orderCode ?? null,

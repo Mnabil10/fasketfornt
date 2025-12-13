@@ -101,7 +101,7 @@ export async function fetchProfitDaily(date: string) {
 
 export async function exportProfit(params: { from: string; to: string; format: "csv" | "xlsx" }) {
   const query = buildQueryParams(params);
-  const response = await api.get<Blob>("/api/v1/admin/reports/profit/export", {
+  const response = await api.get("/api/v1/admin/reports/profit/export", {
     params: query,
     responseType: "blob",
   });
@@ -110,7 +110,12 @@ export async function exportProfit(params: { from: string; to: string; format: "
     (response.headers?.["Content-Type"] as string | undefined) ??
     "";
 
-  // Some backends return a JSON body with a temporary URL instead of a direct blob stream
+  // If backend returns plain text (csv) instead of blob, convert.
+  if (contentType.toLowerCase().includes("text/") && typeof response.data === "string") {
+    return new Blob([response.data], { type: contentType });
+  }
+
+  // Some backends return JSON with a URL
   if (contentType.toLowerCase().includes("application/json") && typeof (response.data as any)?.text === "function") {
     try {
       const text = await (response.data as any).text();
@@ -122,9 +127,9 @@ export async function exportProfit(params: { from: string; to: string; format: "
         return await res.blob();
       }
     } catch {
-      // fall back to returning the original blob
+      /* ignore and fall through */
     }
   }
 
-  return response.data;
+  return response.data as Blob;
 }

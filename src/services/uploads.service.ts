@@ -21,6 +21,8 @@ type ResizeOptions = {
 // Backend allows up to 10MB by default (UPLOAD_MAX_BYTES); mirror that client-side
 const MAX_UPLOAD_MB = 10;
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+// Toggle direct-to-storage uploads (requires CORS on the bucket). Disabled by default to avoid preflight failures.
+const DIRECT_UPLOAD_ENABLED = (import.meta.env.VITE_ENABLE_DIRECT_UPLOADS ?? "false") !== "false";
 
 export async function uploadAdminFile(file: File | Blob, options?: { resize?: ResizeOptions }): Promise<UploadResponse> {
   const size = (file as File).size ?? (file as Blob).size;
@@ -33,9 +35,11 @@ export async function uploadAdminFile(file: File | Blob, options?: { resize?: Re
     maxBytes: options?.resize?.maxBytes ?? MAX_UPLOAD_BYTES,
   });
 
-  const uploadUrl = await tryDirectUpload(maybeResized as File);
-  if (uploadUrl) {
-    return uploadUrl;
+  if (DIRECT_UPLOAD_ENABLED) {
+    const uploadUrl = await tryDirectUpload(maybeResized as File);
+    if (uploadUrl) {
+      return uploadUrl;
+    }
   }
 
   const formData = new FormData();
@@ -152,7 +156,9 @@ async function tryDirectUpload(file: File): Promise<UploadResponse | null> {
       body: file,
     });
     return { url: data.publicUrl, warnings: data.warnings };
-  } catch {
+  } catch (err) {
+    // Most likely CORS/preflight; fall back to proxy upload
+    console.warn("Direct upload failed, falling back to proxy upload", err);
     return null;
   }
 }

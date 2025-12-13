@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
 import { ErrorState } from "../common/ErrorState";
 import { EmptyState } from "../common/EmptyState";
-import { fetchAutomationEvents, replayAutomation, replayAutomationEvent, type AutomationStatus } from "../../../services/automation.service";
+import { fetchAutomationEvents, replayAutomation, replayAutomationEvent, type AutomationStatus, type AutomationEvent } from "../../../services/automation.service";
 import { getAdminErrorMessage } from "../../../lib/errors";
 import { usePermissions } from "../../../auth/permissions";
 import { useDebounce } from "../../../hooks/useDebounce";
@@ -84,6 +84,15 @@ export function AutomationOutboxPage() {
       dead: base.DEAD || 0,
     };
   }, [query.data?.counts]);
+
+  const dynamicTypes = useMemo(() => {
+    const items = query.data?.items || [];
+    const set = new Set<string>();
+    items.forEach((evt: AutomationEvent) => {
+      if (evt.type) set.add(evt.type);
+    });
+    return Array.from(set).sort();
+  }, [query.data?.items]);
 
   const items = query.data?.items || [];
   const total = query.data?.total || 0;
@@ -191,10 +200,11 @@ export function AutomationOutboxPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t("common.all", "All")}</SelectItem>
-              <SelectItem value="order.created">order.created</SelectItem>
-              <SelectItem value="order.status">order.status</SelectItem>
-              <SelectItem value="auth.otp">auth.otp</SelectItem>
-              <SelectItem value="support.response">support.response</SelectItem>
+              {(dynamicTypes.length ? dynamicTypes : ["order.created", "order.status_changed", "order.delivered", "auth.otp.requested", "auth.otp.verified"]).map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Input
@@ -212,11 +222,12 @@ export function AutomationOutboxPage() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="hidden md:grid grid-cols-[1.5fr,1fr,0.8fr,0.6fr,1.2fr,1fr,1fr] text-xs font-medium text-muted-foreground px-4 py-2 border-b">
+          <div className="hidden md:grid grid-cols-[1.3fr,1fr,0.8fr,0.6fr,0.8fr,1.3fr,1fr,1fr] text-xs font-medium text-muted-foreground px-4 py-2 border-b">
             <span>{t("automation.created_at", "Created")}</span>
             <span>{t("automation.type", "Type")}</span>
             <span>{t("automation.status", "Status")}</span>
             <span>{t("automation.attempts", "Attempts")}</span>
+            <span>{t("automation.http_status", "HTTP")}</span>
             <span>{t("automation.error", "Last error")}</span>
             <span>{t("automation.correlation", "Correlation")}</span>
             <span>{t("automation.dedupe", "Dedupe")}</span>
@@ -241,7 +252,7 @@ export function AutomationOutboxPage() {
                   <div
                     key={evt.id}
                     data-testid="automation-row"
-                    className="grid grid-cols-[1.5fr,1fr,0.8fr,0.6fr,1.2fr,1fr,1fr] px-4 py-3 border-b text-sm items-center"
+                    className="grid grid-cols-[1.3fr,1fr,0.8fr,0.6fr,0.8fr,1.3fr,1fr,1fr] px-4 py-3 border-b text-sm items-center"
                   >
                     <span>{dayjs(evt.createdAt).format("DD MMM YYYY HH:mm")}</span>
                     <span>{evt.type}</span>
@@ -249,23 +260,29 @@ export function AutomationOutboxPage() {
                       <Badge variant={STATUS_TONE[evt.status] || "outline"}>{evt.status}</Badge>
                     </span>
                     <span>{evt.attempts}</span>
+                    <span className="text-muted-foreground">
+                      {evt.lastHttpStatus ?? "-"}
+                      {evt.lastResponseSnippet ? (
+                        <span className="block text-xs text-muted-foreground line-clamp-2">{evt.lastResponseSnippet}</span>
+                      ) : null}
+                    </span>
                     <span className="text-muted-foreground line-clamp-2">{evt.lastErrorSnippet || "-"}</span>
                     <span className="text-xs break-all">{evt.correlationId || "-"}</span>
                     <div className="flex items-center gap-2">
                       <span className="text-xs break-all">{evt.dedupeKey || "-"}</span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={!perms.canReplayAutomation || replayOne.isPending}
-                        onClick={() => replayOne.mutate(evt.id)}
-                        title={!perms.canReplayAutomation ? t("automation.permission") || undefined : undefined}
-                      >
-                        {t("automation.replay", "Replay")}
-                      </Button>
-                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={!perms.canReplayAutomation || replayOne.isPending}
+                      onClick={() => replayOne.mutate(evt.id)}
+                      title={!perms.canReplayAutomation ? t("automation.permission") || undefined : undefined}
+                    >
+                      {t("automation.replay", "Replay")}
+                    </Button>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
+            </div>
 
               <div className="md:hidden space-y-3 p-4">
                 {items.map((evt) => (
@@ -277,8 +294,10 @@ export function AutomationOutboxPage() {
                       </div>
                       <Badge variant={STATUS_TONE[evt.status] || "outline"}>{evt.status}</Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground">{evt.lastErrorSnippet || "-"}</p>
                     <div className="text-xs text-muted-foreground space-y-1">
+                      <p>{t("automation.http_status", "HTTP")}: {evt.lastHttpStatus ?? "-"}</p>
+                      {evt.lastResponseSnippet ? <p className="line-clamp-2">{evt.lastResponseSnippet}</p> : null}
+                      <p>{t("automation.error", "Last error")}: {evt.lastErrorSnippet || "-"}</p>
                       <p>{t("automation.correlation", "Correlation")}: {evt.correlationId || "-"}</p>
                       <p>{t("automation.dedupe", "Dedupe")}: {evt.dedupeKey || "-"}</p>
                     </div>

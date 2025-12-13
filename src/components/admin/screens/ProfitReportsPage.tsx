@@ -50,6 +50,10 @@ export function ProfitReportsPage() {
     if (!range.from || !range.to) return;
     try {
       const blob = await exportProfit({ from: range.from, to: range.to, format });
+      if (!blob) {
+        toast.error(t("reports.export_unavailable", "Export not available yet"));
+        return;
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -57,7 +61,7 @@ export function ProfitReportsPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      toast.error(getAdminErrorMessage(error, t));
+      toast.error(getAdminErrorMessage(error, t, t("reports.export_error", "Unable to export profit report")));
     }
   };
 
