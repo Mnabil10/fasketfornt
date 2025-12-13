@@ -107,7 +107,7 @@ export function HotOffersList() {
                     : "danger"
             }
           >
-            {row.status}
+            {t(`products.statuses.${row.status}`, row.status)}
           </FasketBadge>
         ),
       },
@@ -157,14 +157,14 @@ export function HotOffersList() {
             />
             <Select value={status} onValueChange={(value) => { setStatus(value as HotOfferStatus | "all"); setPage(1); }}>
               <SelectTrigger className="w-44">
-                <SelectValue placeholder={t("products.status.all", "All statuses")} />
+                <SelectValue placeholder={t("products.statuses.ALL", "All statuses")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">{t("products.status.all", "All statuses")}</SelectItem>
-                <SelectItem value="ACTIVE">{t("products.status.active", "Active")}</SelectItem>
-                <SelectItem value="DRAFT">{t("products.status.draft", "Draft")}</SelectItem>
-                <SelectItem value="HIDDEN">{t("products.status.hidden", "Hidden")}</SelectItem>
-                <SelectItem value="DISCONTINUED">{t("products.status.discontinued", "Discontinued")}</SelectItem>
+                <SelectItem value="all">{t("products.statuses.ALL", "All statuses")}</SelectItem>
+                <SelectItem value="ACTIVE">{t("products.statuses.ACTIVE", "Active")}</SelectItem>
+                <SelectItem value="DRAFT">{t("products.statuses.DRAFT", "Draft")}</SelectItem>
+                <SelectItem value="HIDDEN">{t("products.statuses.HIDDEN", "Hidden")}</SelectItem>
+                <SelectItem value="DISCONTINUED">{t("products.statuses.DISCONTINUED", "Discontinued")}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={categoryId} onValueChange={(value) => { setCategoryId(value as typeof categoryId); setPage(1); }}>

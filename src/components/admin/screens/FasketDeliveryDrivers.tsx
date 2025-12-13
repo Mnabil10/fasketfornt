@@ -43,18 +43,23 @@ export function FasketDeliveryDrivers() {
       },
       {
         key: "vehicle",
-        title: t("drivers.vehicle", "Vehicle"),
-        render: (row: DeliveryDriver) =>
-          row.vehicle ? (
+        title: t("drivers.vehicleTitle", "Vehicle"),
+        render: (row: DeliveryDriver) => {
+          if (!row.vehicle) {
+            return <span className="text-muted-foreground text-sm">{t("drivers.noVehicle", "No vehicle")}</span>;
+          }
+          const typeKey = row.vehicle.type?.toLowerCase?.() || "";
+          const typeLabel =
+            (typeKey && t(`drivers.vehicle.types.${typeKey}`, row.vehicle.type)) ||
+            t("drivers.vehicleType", "Vehicle type");
+          const details = [row.vehicle.plateNumber, row.vehicle.color].filter(Boolean).join(" • ");
+          return (
             <div className="space-y-1">
-              <div className="font-medium">{row.vehicle.type}</div>
-              <div className="text-xs text-muted-foreground">
-                {row.vehicle.plateNumber} {row.vehicle.color ? `• ${row.vehicle.color}` : ""}
-              </div>
+              <div className="font-medium">{typeLabel}</div>
+              {details ? <div className="text-xs text-muted-foreground">{details}</div> : null}
             </div>
-          ) : (
-            <span className="text-muted-foreground text-sm">{t("drivers.noVehicle", "No vehicle")}</span>
-          ),
+          );
+        },
       },
       {
         key: "createdAt",

@@ -108,7 +108,7 @@ export function FasketOrders({ initialOrderId }: OrdersProps) {
         title: t("orders.status", { defaultValue: "Status" }),
         render: (row: OrderSummary) => (
           <FasketBadge tone={STATUS_COLORS[row.status] ?? "neutral"}>
-            {t(`orders.status.${row.status.toLowerCase()}`, row.status)}
+            {t(`orders.statuses.${row.status}`, row.status)}
           </FasketBadge>
         ),
       },
@@ -224,15 +224,15 @@ export function FasketOrders({ initialOrderId }: OrdersProps) {
               }
             >
               <SelectTrigger className="w-44">
-                <SelectValue placeholder={t("orders.status.all", "All statuses")} />
+                <SelectValue placeholder={t("orders.statuses.ALL", "All statuses")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">{t("orders.status.all", "All statuses")}</SelectItem>
-                <SelectItem value="PENDING">{t("orders.status.pending", "Pending")}</SelectItem>
-                <SelectItem value="PROCESSING">{t("orders.status.processing", "Processing")}</SelectItem>
-                <SelectItem value="OUT_FOR_DELIVERY">{t("orders.status.out_for_delivery", "Out for delivery")}</SelectItem>
-                <SelectItem value="DELIVERED">{t("orders.status.delivered", "Delivered")}</SelectItem>
-                <SelectItem value="CANCELED">{t("orders.status.canceled", "Canceled")}</SelectItem>
+                <SelectItem value="all">{t("orders.statuses.ALL", "All statuses")}</SelectItem>
+                <SelectItem value="PENDING">{t("orders.statuses.PENDING", "Pending")}</SelectItem>
+                <SelectItem value="PROCESSING">{t("orders.statuses.PROCESSING", "Processing")}</SelectItem>
+                <SelectItem value="OUT_FOR_DELIVERY">{t("orders.statuses.OUT_FOR_DELIVERY", "Out for delivery")}</SelectItem>
+                <SelectItem value="DELIVERED">{t("orders.statuses.DELIVERED", "Delivered")}</SelectItem>
+                <SelectItem value="CANCELED">{t("orders.statuses.CANCELED", "Canceled")}</SelectItem>
               </SelectContent>
             </Select>
           </div>

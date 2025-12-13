@@ -1,5 +1,5 @@
 import { api } from "../lib/api";
-import { clearTokens, setAccessToken, setRefreshToken } from "../lib/token-storage";
+import { clearTokens, getRefreshToken, setAccessToken, setRefreshToken } from "../lib/token-storage";
 
 export type LoginResponse = {
   accessToken: string;
@@ -56,11 +56,12 @@ export async function refreshAccessToken(
 
 export async function logout(refreshToken?: string | null) {
   try {
+    const rt = refreshToken ?? getRefreshToken();
     await api.post(
       "/api/v1/auth/logout",
       {},
       {
-        headers: refreshToken ? { Authorization: `Bearer ${refreshToken}` } : undefined,
+        headers: rt ? { Authorization: `Bearer ${rt}` } : undefined,
         withCredentials: true,
       }
     );

@@ -18,10 +18,16 @@ export const api = axios.create({
   timeout: 15000,
 });
 
-// attach bearer
+// attach bearer unless caller explicitly set Authorization (e.g., refresh/logout)
 api.interceptors.request.use((config) => {
-  const token = getAccessToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const hasAuthHeader =
+    typeof config.headers?.Authorization === "string" && config.headers.Authorization.trim().length > 0;
+  if (!hasAuthHeader) {
+    const token = getAccessToken();
+    if (token) {
+      config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
+    }
+  }
   return config;
 });
 

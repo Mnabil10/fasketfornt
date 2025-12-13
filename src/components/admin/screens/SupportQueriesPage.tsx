@@ -125,7 +125,9 @@ export function SupportQueriesPage() {
               </div>
 
               <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
-                <div>{t("common.pagination", { defaultValue: "Page {{page}} of {{count}}", page, count: pageCount })}</div>
+                <div>
+                  {t("common.pagination.label", { defaultValue: "Page {{page}} of {{count}}", page, count: pageCount })}
+                </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                     {t("common.prev", "Prev")}

@@ -507,7 +507,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t text-sm text-muted-foreground">
                 <div>
-                  {t("common.pagination", { defaultValue: "Page {{page}} of {{count}}", page, count: pageCount })}
+                  {t("common.pagination.label", { defaultValue: "Page {{page}} of {{count}}", page, count: pageCount })}
                 </div>
                 <div className="flex flex-wrap gap-2 sm:justify-end">
                   <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>

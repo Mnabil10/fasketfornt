@@ -125,7 +125,9 @@
     "topCategories": "Top categories",
     "topCategoriesHint": "Based on orders for the selected period",
     "topProductsHint": "Bestsellers by quantity",
-    "viewOrders": "View orders"
+    "viewOrders": "View orders",
+    "load_failed": "We couldn't load dashboard data. Please try again.",
+    "retry_hint": "Check your connection or refresh the page."
   },
   "categories": {
     "title": "Categories",
@@ -156,7 +158,8 @@
     "form_subtitle": "Provide multilingual names and set display order",
     "image_hint": "Drop an image or paste a URL",
     "loadError": "Unable to load categories",
-    "reorder_error": "Unable to reorder categories"
+    "reorder_error": "Unable to reorder categories",
+    "reordered": "Categories reordered"
   },
   "products": {
     "title": "Products",
@@ -215,7 +218,8 @@
       "DRAFT": "Draft",
       "ACTIVE": "Active",
       "HIDDEN": "Hidden",
-      "DISCONTINUED": "Discontinued"
+      "DISCONTINUED": "Discontinued",
+      "ALL": "All statuses"
     },
     "performance": "Performance",
     "id": "ID",
@@ -287,7 +291,26 @@
       "out": "Out of stock",
       "all": "All"
     },
-    "tableTitle": "Products"
+    "tableTitle": "Products",
+    "actions": {
+      "activate": "Activate",
+      "bulkActivate": "Activate selected",
+      "bulkHide": "Hide selected",
+      "create": "Create product",
+      "edit": "Edit",
+      "hide": "Hide",
+      "markHot": "Mark hot offer",
+      "removeHot": "Remove hot offer"
+    },
+    "bulkActivated": "Products activated",
+    "bulkHidden": "Products hidden",
+    "category_all": "All categories",
+    "emptyDescription": "Try a different search or status",
+    "emptyTitle": "No products found",
+    "load_failed": "Unable to load products",
+    "retry_hint": "Check your connection and try again.",
+    "sort_by": "Sort by",
+    "updateFailed": "Failed to update product"
   },
   "orders": {
     "title": "Orders",
@@ -327,7 +350,8 @@
       "PROCESSING": "Processing",
       "OUT_FOR_DELIVERY": "Out for Delivery",
       "DELIVERED": "Delivered",
-      "CANCELED": "Canceled"
+      "CANCELED": "Canceled",
+      "ALL": "All statuses"
     },
     "viewAll": "View All Orders",
     "emptyDescription": "Adjust filters or try again later.",
@@ -366,7 +390,29 @@
     "unitPrice": "Unit price",
     "vehicle": "Vehicle",
     "viewReceipt": "View receipt",
-    "zone": "Zone"
+    "zone": "Zone",
+    "actions": "Actions",
+    "automation": "Automation / Notifications",
+    "cancel": "Cancel",
+    "canceled": "Order canceled",
+    "changeDriver": "Change driver",
+    "history_error": "Unable to load history",
+    "lookup_failed": "Lookup failed",
+    "lookup_not_found": "No order found",
+    "markDelivered": "Mark delivered",
+    "markOutForDelivery": "Out for delivery",
+    "markProcessing": "Mark processing",
+    "no_automation": "No automation events found",
+    "no_history": "No history yet",
+    "permission": {
+      "assign": "You do not have permission to assign drivers.",
+      "cancel": "You do not have permission to cancel orders.",
+      "history": "You do not have permission to view history.",
+      "update": "You do not have permission to update orders."
+    },
+    "stuck": "Stuck",
+    "stuckOnly": "Stuck > 30m",
+    "transition_blocked": "Transition not allowed by backend policy"
   },
   "coupons": {
     "title": "Coupons",
@@ -413,7 +459,14 @@
     "passwordReset": "Password reset",
     "resetFailed": "Unable to reset password",
     "roleUpdateFailed": "Unable to update role",
-    "roleUpdated": "Role updated"
+    "roleUpdated": "Role updated",
+    "noAddresses": "No addresses",
+    "noAddressesDescription": "No saved addresses for this customer.",
+    "noOrders": "No orders yet",
+    "noOrdersDescription": "This customer has no orders on file.",
+    "passwordHint": "Use at least 6 characters with numbers/letters.",
+    "role": "Role",
+    "subtitle": "Customers and their loyalty/ordering stats"
   },
   "settings": {
     "title": "Settings",
@@ -593,7 +646,17 @@
     "resetFilters": "Reset filters",
     "save": "Save",
     "saving": "Saving...",
-    "pagination": "Page {{page}} of {{count}}"
+    "pagination": {
+      "label": "Page {{page}} of {{count}}",
+      "summary": "{{from}}-{{to}} of {{total}}"
+    },
+    "active": "Active",
+    "createdAt": "Created",
+    "inactive": "Inactive",
+    "loading": "Loading...",
+    "manage": "Manage",
+    "page": "page",
+    "page_size": "Page size"
   },
   "auth": {
     "sign_in_title": "Sign in to Fasket Dashboard",
@@ -615,7 +678,12 @@
     "identifier_label": "Phone or Email",
     "identifier_placeholder": "+201234567890 or user@fasket.com",
     "invalid_identifier": "Enter a valid phone number or email",
-    "sessionExpired": "Session expired, please sign in again"
+    "sessionExpired": "Session expired, please sign in again",
+    "invalid_otp": "Invalid 2FA code. Try again.",
+    "otp_hint": "Open your authenticator app to view the code.",
+    "otp_label": "2FA code",
+    "otp_placeholder": "Enter your 6-digit code",
+    "otp_required": "Enter the 2FA code to continue"
   },
   "confirm_password": "Confirm Password",
   "newPassword": "New Password",
@@ -637,13 +705,13 @@
     "vehicleTitle": "Vehicle details",
     "vehicleType": "Vehicle type",
     "vehicle": {
-      "type": "Type",
-      "plateNumber": "Plate number",
       "color": "Color",
       "licenseImage": "Car license image",
+      "plateNumber": "Plate number",
+      "type": "Type",
       "types": {
-        "car": "Car",
         "bike": "Bike",
+        "car": "Car",
         "scooter": "Scooter",
         "van": "Van"
       }
@@ -664,7 +732,11 @@
       "licenseImageRequired": "Upload the car license image",
       "plateRequired": "Plate number is required",
       "vehicleType": "Select a vehicle type"
-    }
+    },
+    "disableConfirm": "Disable this driver? They will stop receiving assignments.",
+    "emptyDescription": "Try adjusting filters",
+    "name": "Name",
+    "statusUpdateFailed": "Failed to update driver status"
   },
   "zones": {
     "title": "Delivery Zones",
@@ -702,5 +774,65 @@
     "plate": "Please enter a valid plate number",
     "nonNegative": "Value must be zero or greater",
     "numeric": "Use numbers only"
+  },
+  "automation": {
+    "attempts": "Attempts",
+    "bulk_replay_started": "Replay started for {{count}} events",
+    "correlation": "Correlation",
+    "created_at": "Created",
+    "dead": "Dead",
+    "dedupe": "Dedupe",
+    "empty": "No automation events found",
+    "error": "Last error",
+    "failed": "Failed",
+    "load_error": "Unable to load automation outbox",
+    "pending": "Pending",
+    "permission": "You are not allowed to replay automation events",
+    "replay": "Replay",
+    "replay_confirm": "Replay {{status}} events?",
+    "replay_dead": "Replay dead",
+    "replay_failed": "Replay failed",
+    "replayed": "Replay triggered",
+    "search_placeholder": "Correlation, order code, phone",
+    "status": "Status",
+    "subtitle": "Monitor and replay notification events",
+    "title": "Automation Outbox",
+    "type": "Type"
+  },
+  "reports": {
+    "cogs": "COGS",
+    "date": "Date",
+    "export_csv": "Export CSV",
+    "export_xlsx": "Export XLSX",
+    "fix_costs": "Fix product costs",
+    "gross_profit": "Gross profit",
+    "margin": "Margin",
+    "missing_costs_msg": "Add COGS to products to improve gross profit accuracy.",
+    "missing_costs_title": "Missing product costs detected",
+    "net_revenue": "Net revenue",
+    "no_data": "No data",
+    "permission": "You do not have access to profit reports.",
+    "preset_7d": "Last 7d",
+    "preset_mtd": "MTD",
+    "preset_today": "Today",
+    "profit_subtitle": "Track revenue, COGS, and margins",
+    "profit_title": "Profit Reports",
+    "sales": "Sales",
+    "total": "Total"
+  },
+  "support": {
+    "code_placeholder": "Order code",
+    "date": "Date",
+    "empty": "No support queries found",
+    "intent": "Intent",
+    "open_order": "Open order",
+    "order": "Order code",
+    "permission": "You do not have access to support queries.",
+    "phone": "Phone",
+    "phone_placeholder": "Phone",
+    "response": "Response",
+    "status": "Status",
+    "subtitle": "Audit support bot lookups and quick order access",
+    "title": "Support Queries"
   }
 }
