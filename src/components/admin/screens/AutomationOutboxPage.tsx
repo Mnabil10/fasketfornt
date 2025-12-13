@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+﻿import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,6 +11,7 @@ import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
 import { ErrorState } from "../common/ErrorState";
 import { EmptyState } from "../common/EmptyState";
 import { fetchAutomationEvents, replayAutomation, replayAutomationEvent, type AutomationStatus, type AutomationEvent } from "../../../services/automation.service";
+import { fetchOpsWatchers } from "../../../services/ops.service";
 import { getAdminErrorMessage } from "../../../lib/errors";
 import { usePermissions } from "../../../auth/permissions";
 import { useDebounce } from "../../../hooks/useDebounce";
@@ -76,6 +77,13 @@ export function AutomationOutboxPage() {
     onError: (error) => toast.error(getAdminErrorMessage(error, t)),
   });
 
+  const opsWatcherQuery = useQuery({
+    queryKey: ["ops-watchers"],
+    queryFn: () => fetchOpsWatchers(),
+    enabled: perms.canViewAutomation,
+    staleTime: 60_000,
+  });
+
   const counts = useMemo(() => {
     const base = query.data?.counts || {};
     return {
@@ -97,6 +105,16 @@ export function AutomationOutboxPage() {
   const items = query.data?.items || [];
   const total = query.data?.total || 0;
   const pageCount = Math.max(1, Math.ceil(total / filters.pageSize));
+  const activeFilters = useMemo(() => {
+    const list: string[] = [];
+    if (filters.status) list.push(`${t("automation.status", "Status")}: ${filters.status}`);
+    if (filters.type) list.push(`${t("automation.type", "Type")}: ${filters.type}`);
+    if (filters.from) list.push(`${t("common.from", "From")}: ${filters.from}`);
+    if (filters.to) list.push(`${t("common.to", "To")}: ${filters.to}`);
+    if (filters.q) list.push(`${t("automation.search", "Search")}: ${filters.q}`);
+    return list;
+  }, [filters.status, filters.type, filters.from, filters.to, filters.q, t]);
+  const watcher = opsWatcherQuery.data?.watchers?.ordersStuck;
 
   const handleReplayBulk = (status: AutomationStatus | string) => {
     if (!perms.canReplayAutomation) {
@@ -121,6 +139,9 @@ export function AutomationOutboxPage() {
         <div>
           <h1 className="text-2xl font-semibold">{t("automation.title", "Automation Outbox")}</h1>
           <p className="text-muted-foreground">{t("automation.subtitle", "Monitor and replay notification events")}</p>
+          {activeFilters.length > 0 && (
+            <p className="text-xs text-muted-foreground">{t("automation.active_filters", "Active filters")}: {activeFilters.join(" | ")}</p>
+          )}
         </div>
         <div className="flex gap-2">
           <Button
@@ -167,6 +188,49 @@ export function AutomationOutboxPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="flex items-center gap-2">{t("automation.ops_watcher", "Ops watcher status")}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {opsWatcherQuery.isLoading ? (
+            <AdminTableSkeleton rows={1} columns={2} />
+          ) : opsWatcherQuery.isError ? (
+            <ErrorState message={getAdminErrorMessage(opsWatcherQuery.error, t)} onRetry={() => opsWatcherQuery.refetch()} />
+          ) : watcher ? (
+            <>
+              <div className="flex items-center justify-between">
+                <span>{t("automation.orders_stuck_watcher", "Stuck orders watcher")}</span>
+                <Badge variant="outline" className={watcher.enabled ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
+                  {watcher.enabled ? t("common.enabled", "Enabled") : t("common.disabled", "Disabled")}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t("automation.interval", "Scan interval")}:{" "}
+                {watcher.intervalMs ? `${Math.round(watcher.intervalMs / 60000)}m` : t("common.not_available", "N/A")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("automation.thresholds", "Thresholds")}:{" "}
+                {watcher.thresholds?.length
+                  ? watcher.thresholds.map((th) => `${th.status || ""}>${th.minutes}m`).join(" • ")
+                  : t("automation.thresholds_missing", "No thresholds configured")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("automation.last_run", "Last run")}:{" "}
+                {watcher.lastRunAt ? dayjs(watcher.lastRunAt).format("DD MMM YYYY HH:mm") : t("automation.never", "Never")}
+              </p>
+              {!watcher.enabled && (
+                <p className="text-xs text-red-700">
+                  {t("automation.watcher_disabled_hint", "Watcher disabled—stuck orders alerts will not fire.")}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">{t("automation.ops_unknown", "Watcher status unavailable")}</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="flex items-center gap-2">{t("common.filters", "Filters")}</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-3">
@@ -205,6 +269,11 @@ export function AutomationOutboxPage() {
                   {s}
                 </SelectItem>
               ))}
+              {!dynamicTypes.length && (
+                <div className="px-3 py-2 text-xs text-muted-foreground">
+                  {t("automation.type_hint", "No events loaded yet; showing common types")}
+                </div>
+              )}
             </SelectContent>
           </Select>
           <Input
@@ -243,7 +312,10 @@ export function AutomationOutboxPage() {
             />
           ) : !items.length ? (
             <div className="p-4">
-              <EmptyState title={t("automation.empty", "No automation events found")} />
+              <EmptyState
+                title={t("automation.empty", "No automation events found")}
+                description={t("automation.try_filters", "Try clearing filters or waiting for new events")}
+              />
             </div>
           ) : (
             <>

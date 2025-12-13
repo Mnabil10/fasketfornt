@@ -14,6 +14,7 @@ import { maskPhone } from "../../../lib/pii";
 import { usePermissions } from "../../../auth/permissions";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "../../ui/badge";
+import { AlertTriangle } from "lucide-react";
 
 export function SupportQueriesPage() {
   const { t } = useTranslation();
@@ -42,6 +43,8 @@ export function SupportQueriesPage() {
   const items = query.data?.items || [];
   const total = query.data?.total || 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const unlinkedCount = items.filter((row) => !row.orderCode).length;
+  const showBackfillHint = items.length >= 5 && unlinkedCount / Math.max(items.length, 1) >= 0.3;
 
   const masked = (value?: string | null) => (perms.canViewPII ? value || "" : maskPhone(value || ""));
 
@@ -65,6 +68,23 @@ export function SupportQueriesPage() {
           <Button variant="outline" onClick={() => { setPhone(""); setCode(""); setPage(1); }}>{t("common.resetFilters", "Reset filters")}</Button>
         </CardContent>
       </Card>
+
+      {showBackfillHint && (
+        <Card className="border-orange-200 bg-orange-50">
+          <CardContent className="p-4 text-sm text-orange-800 flex items-start gap-3">
+            <AlertTriangle className="w-4 h-4 mt-0.5" />
+            <div>
+              <p className="font-semibold">{t("support.backfill_needed", "Many entries are unlinked to orders")}</p>
+              <p>
+                {t(
+                  "support.backfill_hint",
+                  "Suggest running support backfill: POST /api/v1/admin/support/backfill to restore masked phone + order code."
+                )}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -92,10 +112,10 @@ export function SupportQueriesPage() {
                 {items.map((row) => (
                   <div key={row.id} className="grid grid-cols-[1fr,1fr,1fr,1fr,1fr,0.8fr] px-4 py-3 border-b text-sm items-center">
                     <span>{dayjs(row.createdAt).format("DD MMM YYYY HH:mm")}</span>
-                    <span>{row.phone ? masked(row.phone) : t("support.unavailable", "Unavailable")}</span>
+                    <span>{row.phone || row.maskedPhone ? masked(row.phone || row.maskedPhone) : t("support.unavailable", "Unavailable")}</span>
                     <span>{row.intent || "-"}</span>
                     <span className={row.orderCode ? "underline cursor-pointer" : ""} onClick={() => row.orderCode && navigate(`/orders/${row.orderCode}`)}>
-                      {row.orderCode || t("support.unavailable", "Unavailable")}
+                      {row.orderCode || t("support.unlinked", "Unlinked query")}
                     </span>
                     <span className="text-xs text-muted-foreground line-clamp-2">{row.responseSnippet || "-"}</span>
                     <Badge variant="outline">{row.status || "-"}</Badge>
@@ -114,7 +134,7 @@ export function SupportQueriesPage() {
                       <Badge variant="outline">{row.status || "-"}</Badge>
                     </div>
                     <p className="text-sm">
-                      {t("support.phone", "Phone")}: {row.phone ? masked(row.phone) : t("support.unavailable", "Unavailable")}
+                      {t("support.phone", "Phone")}: {row.phone || row.maskedPhone ? masked(row.phone || row.maskedPhone) : t("support.unavailable", "Unavailable")}
                     </p>
                     <p className="text-xs text-muted-foreground line-clamp-2">{row.responseSnippet || "-"}</p>
                     {row.orderCode ? (
@@ -122,7 +142,7 @@ export function SupportQueriesPage() {
                         {t("support.open_order", "Open order")}
                       </Button>
                     ) : (
-                      <p className="text-xs text-muted-foreground">{t("support.no_order", "Order code unavailable")}</p>
+                    <p className="text-xs text-muted-foreground">{t("support.no_order", "Order code unavailable")}</p>
                     )}
                   </div>
                 ))}

@@ -45,8 +45,13 @@ export function ProfitReportsPage() {
   const data = query.data;
   const currency = data?.currency || data?.totals?.currency || "EGP";
   const warnMissingCost = (data?.totals?.missingCostCount || 0) > 0;
+  const supportsXlsx = Boolean((data as any)?.supportsXlsx || (data as any)?.xlsx === true);
 
   const handleExport = async (format: "csv" | "xlsx") => {
+    if (format === "xlsx" && !supportsXlsx) {
+      toast.error(t("reports.export_xlsx_disabled", "XLSX not available"));
+      return;
+    }
     if (!range.from || !range.to) return;
     try {
       const blob = await exportProfit({ from: range.from, to: range.to, format });
@@ -82,11 +87,11 @@ export function ProfitReportsPage() {
           <h1 className="text-2xl font-semibold">{t("reports.profit_title", "Profit Reports")}</h1>
           <p className="text-muted-foreground">{t("reports.profit_subtitle", "Track revenue, COGS, and margins")}</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setRange(presets(today).today)}>
-            {t("reports.preset_today", "Today")}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setRange(presets(today).week)}>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setRange(presets(today).today)}>
+              {t("reports.preset_today", "Today")}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setRange(presets(today).week)}>
             {t("reports.preset_7d", "Last 7d")}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setRange(presets(today).mtd)}>
@@ -105,7 +110,15 @@ export function ProfitReportsPage() {
           <Button variant="outline" onClick={() => query.refetch()}>{t("common.refresh", "Refresh")}</Button>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => handleExport("csv")}>{t("reports.export_csv", "Export CSV")}</Button>
-            <Button variant="outline" size="sm" onClick={() => handleExport("xlsx")}>{t("reports.export_xlsx", "Export XLSX")}</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!supportsXlsx}
+              title={!supportsXlsx ? t("reports.export_xlsx_disabled", "XLSX not available") : undefined}
+              onClick={() => supportsXlsx && handleExport("xlsx")}
+            >
+              {t("reports.export_xlsx", "Export XLSX")}
+            </Button>
           </div>
         </CardContent>
       </Card>

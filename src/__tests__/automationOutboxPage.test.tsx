@@ -28,6 +28,14 @@ vi.mock("../services/automation.service", () => ({
   replayAutomation: vi.fn(),
 }));
 
+vi.mock("../services/ops.service", () => ({
+  fetchOpsWatchers: vi.fn().mockResolvedValue({
+    watchers: {
+      ordersStuck: { enabled: true, thresholds: [], intervalMs: 300000, lastRunAt: "2024-01-01T00:05:00Z" },
+    },
+  }),
+}));
+
 vi.mock("../auth/permissions", () => ({
   usePermissions: () => ({
     canReplayAutomation: true,

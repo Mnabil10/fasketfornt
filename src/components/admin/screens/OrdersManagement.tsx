@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -130,6 +130,25 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     queryFn: () => fetchAutomationEvents({ q: detailQuery.data?.code || selectedOrderId || "" }),
     enabled: perms.canViewAutomation && detailOpen && Boolean(detailQuery.data?.code || selectedOrderId),
   });
+
+  const fallbackAutomationQuery = useQuery({
+    queryKey: [...ORDERS_QUERY_KEY, "automation-fallback", selectedOrderId],
+    queryFn: () => fetchAutomationEvents({ q: selectedOrderId || "" }),
+    enabled:
+      perms.canViewAutomation &&
+      detailOpen &&
+      Boolean(selectedOrderId) &&
+      automationQuery.isSuccess &&
+      (automationQuery.data?.items?.length || 0) === 0,
+  });
+  const automationItems =
+    automationQuery.data?.items?.length && !automationQuery.isError
+      ? automationQuery.data.items
+      : fallbackAutomationQuery.data?.items || [];
+  const automationLoading = automationQuery.isLoading || fallbackAutomationQuery.isLoading;
+  const automationError = automationQuery.error || fallbackAutomationQuery.error;
+  const automationUsedFallback =
+    automationQuery.isSuccess && (automationQuery.data?.items?.length || 0) === 0 && (fallbackAutomationQuery.data?.items?.length || 0) > 0;
 
   const assignDriverMutation = useAssignDriver(selectedOrderId || "");
   const updateStatusMutation = useMutation({
@@ -669,16 +688,45 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    {automationQuery.isLoading ? (
+                    {automationItems.length ? (
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="space-y-1">
+                          <p className="text-muted-foreground">{t("orders.lastAutomation", "Last automation status")}</p>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={["FAILED", "DEAD"].includes((automationItems[0].status || "").toUpperCase()) ? "destructive" : "outline"}>
+                              {automationItems[0].status}
+                            </Badge>
+                            {automationItems[0].lastHttpStatus ? (
+                              <span className="text-xs text-muted-foreground">HTTP {automationItems[0].lastHttpStatus}</span>
+                            ) : null}
+                          </div>
+                          {automationItems[0].lastErrorSnippet ? (
+                            <p className="text-xs text-red-600 line-clamp-2">{automationItems[0].lastErrorSnippet}</p>
+                          ) : null}
+                          {automationItems[0].lastResponseSnippet ? (
+                            <p className="text-xs text-muted-foreground line-clamp-2">{automationItems[0].lastResponseSnippet}</p>
+                          ) : null}
+                          {automationUsedFallback && (
+                            <p className="text-[11px] text-muted-foreground">
+                              {t("orders.automation_fallback", "Using fallback search by order ID because order code was not present in payload.")}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+                    {automationLoading ? (
                       <AdminTableSkeleton rows={2} columns={3} />
-                    ) : automationQuery.isError ? (
+                    ) : automationError ? (
                       <ErrorState
-                        message={getAdminErrorMessage(automationQuery.error, t)}
-                        onRetry={() => automationQuery.refetch()}
+                        message={getAdminErrorMessage(automationError, t)}
+                        onRetry={() => {
+                          automationQuery.refetch();
+                          fallbackAutomationQuery.refetch();
+                        }}
                       />
-                    ) : automationQuery.data?.items?.length ? (
+                    ) : automationItems.length ? (
                       <div className="space-y-2">
-                        {automationQuery.data.items.slice(0, 4).map((evt) => (
+                        {automationItems.slice(0, 4).map((evt) => (
                           <div key={evt.id} className="flex items-start justify-between gap-3 border-b last:border-0 pb-2">
                             <div>
                               <p className="font-medium text-sm">{evt.type}</p>
@@ -694,7 +742,9 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">{t("orders.no_automation", "No automation events found")}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {t("orders.no_automation_hint", "No automation events found for this order (may be older data or backfill pending).")}
+                      </p>
                     )}
                   </CardContent>
                 </Card>
@@ -724,7 +774,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                           <li key={entry.id} className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-medium text-sm">
-                                {entry.from ? `${entry.from} → ${entry.to}` : entry.to}
+                                {entry.from ? `${entry.from} -> ${entry.to}` : entry.to}
                               </p>
                               {entry.note && <p className="text-xs text-muted-foreground">{entry.note}</p>}
                             </div>
@@ -787,3 +837,4 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     </div>
   );
 }
+
