@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { getCustomer, setCustomerRole, resetCustomerPassword, Customer } from "../../../services/customers.service";
+import { getCustomer, setCustomerRole, resetCustomerPassword, Customer, deleteCustomer } from "../../../services/customers.service";
 import { fmtEGP } from "../../../lib/money";
 
 // shadcn/ui
@@ -23,9 +23,20 @@ import { ErrorState } from "../../admin/common/ErrorState";
 import { useDebounce } from "../../../hooks/useDebounce";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../ui/select";
 import { useSearchParams } from "react-router-dom";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "../../ui/alert-dialog";
 
 // Icons
-import { Search, Eye, Phone, Mail, MapPin, Calendar, Users } from "lucide-react";
+import { Search, Phone, Mail, MapPin, Calendar, Users, Trash2 } from "lucide-react";
 
 type CustomerDetail = {
   id: string;
@@ -114,6 +125,19 @@ export function CustomersManagement() {
       queryClient.invalidateQueries({ queryKey: CUSTOMERS_QUERY_KEY });
     },
     onError: (error) => toast.error(getAdminErrorMessage(error, t, t("customers.resetFailed", "Unable to reset password"))),
+  });
+
+  const deleteCustomerMutation = useMutation({
+    mutationFn: (id: string) => deleteCustomer(id),
+    onSuccess: async (_data, id) => {
+      toast.success(t("customers.deleted", "Customer deleted"));
+      await queryClient.invalidateQueries({ queryKey: CUSTOMERS_QUERY_KEY });
+      if (selected?.id === id) {
+        setSelected(null);
+      }
+    },
+    onError: (error) =>
+      toast.error(getAdminErrorMessage(error, t, t("customers.deleteFailed", "Unable to delete customer"))),
   });
 
   async function open(id: string) {
@@ -335,6 +359,44 @@ export function CustomersManagement() {
                           >
                             {t("resetPassword", "Reset Password")}
                           </Button>
+                          {isAdmin && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  disabled={deleteCustomerMutation.isPending}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-1" />
+                                  {t("app.actions.delete")}
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>{t("customers.deleteTitle", "Delete customer")}</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    {t(
+                                      "customers.deleteConfirm",
+                                      "This will permanently remove the customer if they have no orders. This cannot be undone.",
+                                    )}
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel disabled={deleteCustomerMutation.isPending}>
+                                    {t("app.actions.cancel")}
+                                  </AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => deleteCustomerMutation.mutate(c.id)}
+                                    disabled={deleteCustomerMutation.isPending}
+                                  >
+                                    {deleteCustomerMutation.isPending
+                                      ? t("app.loading", "Loading...")
+                                      : t("app.actions.delete")}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -625,9 +687,5 @@ export function CustomersManagement() {
     </div>
   );
 }
-
-
-
-
 
 

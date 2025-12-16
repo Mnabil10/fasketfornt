@@ -78,6 +78,11 @@ export async function resetCustomerPassword(id: string, newPassword: string) {
   return data;
 }
 
+export async function deleteCustomer(id: string) {
+  const { data } = await api.delete<{ ok: true }>(`/api/v1/admin/customers/${id}`);
+  return data;
+}
+
 export async function getCustomerLoyalty(id: string, options?: { limit?: number }) {
   const limit =
     options?.limit != null && Number.isFinite(Number(options.limit))
