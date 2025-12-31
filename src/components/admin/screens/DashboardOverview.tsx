@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { useDashboardAdmin } from "../../../hooks/api/useDashboardAdmin";
 import { fmtEGP } from "../../../lib/money";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
@@ -75,6 +76,10 @@ export function DashboardOverview({ updateAdminState }: Props) {
   const topCategories = summary?.topCategories?.slice(0, 5) || [];
   const recentOrders = summary?.recent?.slice(0, 5) || [];
   const lowStock = summary?.lowStock?.slice(0, 5) || [];
+  const resolveOrderStatus = React.useCallback(
+    (status?: string) => (status ? t(`orders.statuses.${status}`, { defaultValue: status }) : ""),
+    [t]
+  );
 
   const hasError = summaryQuery.isError || seriesQuery.isError;
 
@@ -206,7 +211,7 @@ export function DashboardOverview({ updateAdminState }: Props) {
                       tick={{ fontSize: 12 }}
                       tickFormatter={(value) => (metric === "revenue" ? fmtCurrency(value, i18n.language) : value)}
                     />
-                    <Tooltip formatter={(value: number) => formatTooltip(value, metric, i18n.language)} />
+                    <Tooltip formatter={(value: number) => formatTooltip(value, metric, i18n.language, t)} />
                     <Line
                       type="monotone"
                       dataKey={metric === "revenue" ? "revenue" : "orders"}
@@ -308,7 +313,7 @@ export function DashboardOverview({ updateAdminState }: Props) {
                   </div>
                   <div className="text-right">
                     <p className="font-semibold">{fmtEGP(order.totalCents)}</p>
-                    <Badge variant="secondary">{order.status}</Badge>
+                    <Badge variant="secondary">{resolveOrderStatus(order.status)}</Badge>
                   </div>
                 </div>
               ))
@@ -331,7 +336,7 @@ export function DashboardOverview({ updateAdminState }: Props) {
               summary?.byStatus?.map((status) => (
                 <div key={status.status} className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium capitalize">{status.status.toLowerCase()}</p>
+                    <p className="font-medium">{resolveOrderStatus(status.status)}</p>
                     <p className="text-xs text-muted-foreground">{t("dashboard.orders", "Orders")}</p>
                   </div>
                   <Badge>{status._count.status}</Badge>
@@ -357,11 +362,11 @@ function fmtCurrency(value: number, language: string) {
   }
 }
 
-function formatTooltip(value: number, metric: MetricOption, language: string) {
+function formatTooltip(value: number, metric: MetricOption, language: string, t: TFunction) {
   if (metric === "revenue") {
     return fmtCurrency(value, language);
   }
-  return `${value} orders`;
+  return `${value} ${t("dashboard.orders", "Orders")}`;
 }
 
 type DataListProps = {

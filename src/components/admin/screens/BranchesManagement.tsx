@@ -82,13 +82,14 @@ const toOptionalCents = (value: number | null | undefined) => {
 };
 
 export function BranchesManagement() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<BranchStatus | "all">("all");
   const [providerId, setProviderId] = useState<string>("all");
   const [page, setPage] = useState(1);
   const pageSize = 20;
+  const isArabic = i18n.language?.startsWith("ar");
 
   const filters = useMemo<BranchFilters>(
     () => ({
@@ -226,7 +227,7 @@ export function BranchesManagement() {
               <Plus className="w-4 h-4" /> {t("branches.addNew", "New Branch")}
             </Button>
           </DialogTrigger>
-          <DialogContent aria-describedby={undefined} className="max-w-4xl w-[95vw]">
+          <DialogContent aria-describedby={undefined} className="max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editing ? t("branches.edit", "Edit Branch") : t("branches.addNew", "New Branch")}</DialogTitle>
             </DialogHeader>
@@ -244,7 +245,7 @@ export function BranchesManagement() {
                       <SelectContent>
                         {providers.map((provider) => (
                           <SelectItem key={provider.id} value={provider.id}>
-                            {provider.name}
+                            {isArabic ? provider.nameAr || provider.name : provider.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -403,7 +404,7 @@ export function BranchesManagement() {
                 <SelectItem value="all">{t("common.all", "All")}</SelectItem>
                 {providers.map((provider) => (
                   <SelectItem key={provider.id} value={provider.id}>
-                    {provider.name}
+                    {isArabic ? provider.nameAr || provider.name : provider.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -459,9 +460,14 @@ export function BranchesManagement() {
                   {items.map((branch) => (
                     <TableRow key={branch.id}>
                       <TableCell className="font-medium">
-                        {branch.name} {branch.isDefault ? `(${t("branches.defaultBadge", "Default")})` : ""}
+                        {(isArabic ? branch.nameAr || branch.name : branch.name)}{" "}
+                        {branch.isDefault ? `(${t("branches.defaultBadge", "Default")})` : ""}
                       </TableCell>
-                      <TableCell>{branch.provider?.name ?? branch.providerId}</TableCell>
+                      <TableCell>
+                        {branch.provider
+                          ? (isArabic ? branch.provider.nameAr || branch.provider.name : branch.provider.name)
+                          : branch.providerId}
+                      </TableCell>
                       <TableCell>{resolveStatusLabel(branch.status)}</TableCell>
                       <TableCell>
                         {branch.lat != null && branch.lng != null ? `${branch.lat}, ${branch.lng}` : "-"}

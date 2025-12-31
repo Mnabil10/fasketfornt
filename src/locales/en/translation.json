@@ -137,7 +137,7 @@
     "name": "Name",
     "slug": "Slug",
     "active": "Active",
-    "imageUrl": "Image URL",
+    "imageUrl": "Image",
     "sortOrder": "Sort Order",
     "parent": "Parent Category",
     "root": "Root Category",
@@ -156,7 +156,7 @@
     "emptyDescription": "Start by creating your first category.",
     "emptyTitle": "No categories yet",
     "form_subtitle": "Provide multilingual names and set display order",
-    "image_hint": "Drop an image or paste a URL",
+    "image_hint": "Drop an image to upload",
     "loadError": "Unable to load categories",
     "reorder_error": "Unable to reorder categories",
     "reordered": "Categories reordered"
@@ -231,7 +231,7 @@
       "low": "Low"
     },
     "media": {
-      "hint": "Paste image URLs above (preview uses the main image)"
+      "hint": "Drop images here to upload."
     },
     "add": "Add Product",
     "bulkImport": {
@@ -637,9 +637,9 @@
     "mobileAppSupport": "Support",
     "mobileAppFeatures": "Features",
     "mobileAppAppName": "App name",
-    "mobileAppLogoUrl": "Logo URL",
-    "mobileAppWordmarkUrl": "Wordmark URL",
-    "mobileAppSplashUrl": "Splash image URL",
+    "mobileAppLogoUrl": "Logo",
+    "mobileAppWordmarkUrl": "Wordmark",
+    "mobileAppSplashUrl": "Splash image",
     "mobileAppPrimaryColor": "Primary color",
     "mobileAppAccentColor": "Accent color",
     "mobileAppBackgroundColor": "Background color",
@@ -659,7 +659,7 @@
     "mobileAppSubtitle": "Subtitle",
     "mobileAppPillIcon": "Pill icon",
     "mobileAppPillLabel": "Pill label",
-    "mobileAppPromoImage": "Image URL",
+    "mobileAppPromoImage": "Image",
     "mobileAppSectionType": "Section type",
     "mobileAppSectionLimit": "Limit",
     "mobileAppServiceArea": "Service area",
@@ -712,7 +712,8 @@
     },
     "deliveryRatePerKm": "Delivery rate per km",
     "minDeliveryFee": "Min delivery fee",
-    "maxDeliveryFee": "Max delivery fee"
+    "maxDeliveryFee": "Max delivery fee",
+    "mobileAppImageHint": "Drop an image to upload."
   },
   "menu": {
     "dashboard": "Dashboard",
@@ -722,7 +723,14 @@
     "orders": "Orders",
     "customers": "Customers",
     "coupons": "Coupons",
-    "settings": "Settings"
+    "settings": "Settings",
+    "providers": "Providers",
+    "branches": "Branches",
+    "delivery-drivers": "Delivery Drivers",
+    "billing": "Billing",
+    "automation-outbox": "Automation Outbox",
+    "reports": "Profit Reports",
+    "support": "Support"
   },
   "common": {
     "app_name": "Fasket",
@@ -1146,7 +1154,7 @@
     "emptyDesc": "Create a provider to get started.",
     "emptyTitle": "No providers found",
     "loadError": "Unable to load providers",
-    "logoUrl": "Logo URL",
+    "logoUrl": "Logo",
     "maxFee": "Max delivery fee (currency)",
     "minFee": "Min delivery fee (currency)",
     "nameAr": "Name (AR)",

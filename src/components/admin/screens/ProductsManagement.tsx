@@ -1251,23 +1251,32 @@ type ProductImagesInputProps = {
 
 function ProductImagesInput({ value, mainImage, onChange, onMainChange }: ProductImagesInputProps) {
   const { t } = useTranslation();
-  const [urlInput, setUrlInput] = useState("");
   const dragIndex = useRef<number | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const MAX_IMAGE_MB = 2;
 
-  const handleAdd = () => {
-    const trimmed = urlInput.trim();
-    if (!trimmed) return;
-    onChange([...(value || []), trimmed]);
-    setUrlInput("");
-  };
-
-  const handleDropNew = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const dropped = event.dataTransfer.getData("text/uri-list") || event.dataTransfer.getData("text/plain");
-    if (!dropped) return;
-    const trimmed = dropped.trim();
-    if (!trimmed) return;
-    onChange([...(value || []), trimmed]);
+  const handleFiles = async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (!list.length) return;
+    setUploading(true);
+    try {
+      const nextUrls: string[] = [];
+      for (const file of list) {
+        if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
+          toast.error(t("products.upload.too_large", "File too large"));
+          continue;
+        }
+        const { url } = await uploadAdminFile(file);
+        nextUrls.push(url);
+      }
+      if (nextUrls.length) {
+        const merged = [...(value || []), ...nextUrls].filter(Boolean);
+        onChange(Array.from(new Set(merged)));
+      }
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleReorder = (targetIndex: number) => {
@@ -1287,19 +1296,35 @@ function ProductImagesInput({ value, mainImage, onChange, onMainChange }: Produc
       <div
         className="border border-dashed rounded-lg p-4 text-center text-sm text-muted-foreground"
         onDragOver={(event) => event.preventDefault()}
-        onDrop={handleDropNew}
+        onDrop={(event) => {
+          event.preventDefault();
+          const files = event.dataTransfer.files;
+          if (files && files.length) {
+            void handleFiles(files);
+          }
+        }}
       >
-        {t("products.media.hint", "Drop image URLs here or paste them below.")}
+        {t("products.media.hint", "Drop images here to upload.")}
       </div>
-      <div className="flex gap-2">
-        <Input
-          value={urlInput}
-          onChange={(event) => setUrlInput(event.target.value)}
-          placeholder="https://cdn.fasket.com/image.jpg"
-        />
-        <Button type="button" onClick={handleAdd}>
-          {t("app.actions.add", "Add")}
+      <div className="flex items-center gap-2">
+        <Button type="button" variant="outline" onClick={() => inputRef.current?.click()} disabled={uploading}>
+          {uploading ? t("common.saving", "Saving...") : t("app.actions.upload", "Upload")}
         </Button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            const files = event.target.files;
+            if (files && files.length) {
+              void handleFiles(files);
+            }
+            event.currentTarget.value = "";
+          }}
+        />
+        <p className="text-xs text-muted-foreground">{t("validation.imageType", "Use PNG, JPG, or WEBP (max {{size}}MB)", { size: MAX_IMAGE_MB })}</p>
       </div>
 
       {items.length === 0 ? (

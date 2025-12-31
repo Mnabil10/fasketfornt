@@ -547,8 +547,16 @@ function CategoryFormDialog({ open, onOpenChange, mode, category, parents, loadi
             <Label>{t("categories.image", "Image")}</Label>
             <CategoryImageInput
               value={previewUrl || form.watch("imageUrl")}
-              onUrlChange={(url) => form.setValue("imageUrl", url)}
-              onFileSelected={(file) => setImageFile(file)}
+              onFileSelected={(file) => {
+                setImageFile(file);
+                if (file) {
+                  form.setValue("imageUrl", "");
+                }
+              }}
+              onClear={() => {
+                setImageFile(null);
+                form.setValue("imageUrl", "");
+              }}
             />
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -567,14 +575,13 @@ function CategoryFormDialog({ open, onOpenChange, mode, category, parents, loadi
 
 type CategoryImageInputProps = {
   value?: string | null;
-  onUrlChange: (url: string) => void;
   onFileSelected: (file: File | null) => void;
+  onClear: () => void;
 };
 
-function CategoryImageInput({ value, onUrlChange, onFileSelected }: CategoryImageInputProps) {
+function CategoryImageInput({ value, onFileSelected, onClear }: CategoryImageInputProps) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const displayValue = value?.startsWith("blob:") ? "" : value || "";
   const [sizeError, setSizeError] = useState<string | null>(null);
 
   const handleFile = (file: File | null) => {
@@ -590,7 +597,6 @@ function CategoryImageInput({ value, onUrlChange, onFileSelected }: CategoryImag
       return;
     }
     setSizeError(null);
-    onUrlChange("");
     onFileSelected(file);
   };
 
@@ -604,10 +610,7 @@ function CategoryImageInput({ value, onUrlChange, onFileSelected }: CategoryImag
           const file = event.dataTransfer.files?.[0];
           if (file) {
             handleFile(file);
-            return;
           }
-          const url = event.dataTransfer.getData("text/uri-list") || event.dataTransfer.getData("text/plain");
-          if (url.trim()) onUrlChange(url.trim());
         }}
       >
         {value ? (
@@ -619,7 +622,7 @@ function CategoryImageInput({ value, onUrlChange, onFileSelected }: CategoryImag
             <ImageIcon className="w-5 h-5 text-muted-foreground" />
           </div>
         )}
-        <p className="mt-3 text-xs">{t("categories.image_hint", "Drop an image or paste a URL")}</p>
+        <p className="mt-3 text-xs">{t("categories.image_hint", "Drop an image to upload")}</p>
         <div className="flex justify-center gap-2 mt-2">
           <Button type="button" size="sm" variant="outline" onClick={() => inputRef.current?.click()}>
             {t("app.actions.upload")}
@@ -629,8 +632,8 @@ function CategoryImageInput({ value, onUrlChange, onFileSelected }: CategoryImag
             size="sm"
             variant="ghost"
             onClick={() => {
-              onUrlChange("");
               onFileSelected(null);
+              onClear();
             }}
           >
             {t("app.actions.clear", "Clear")}
@@ -644,11 +647,6 @@ function CategoryImageInput({ value, onUrlChange, onFileSelected }: CategoryImag
           onChange={(event) => handleFile(event.target.files?.[0] || null)}
         />
       </div>
-      <Input
-        value={displayValue}
-        onChange={(event) => onUrlChange(event.target.value)}
-        placeholder="https://cdn.fasket.com/category.jpg"
-      />
       {sizeError && <p className="text-xs text-rose-600">{sizeError}</p>}
     </div>
   );

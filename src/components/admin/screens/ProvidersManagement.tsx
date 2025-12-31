@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
@@ -14,12 +14,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Plus, Search, Edit } from "lucide-react";
 import { useProviders, PROVIDERS_QUERY_KEY } from "../../../hooks/api/useProviders";
 import { createProvider, updateProvider } from "../../../services/providers.service";
+import { uploadAdminFile } from "../../../services/uploads.service";
 import { fmtEGP, toCents } from "../../../lib/money";
 import { getAdminErrorMessage } from "../../../lib/errors";
 import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
 import { EmptyState } from "../common/EmptyState";
 import { ErrorState } from "../common/ErrorState";
 import type { Provider, ProviderFilters, ProviderUpsertInput, ProviderStatus, ProviderType, DeliveryMode } from "../../../types/provider";
+import { ImageWithFallback } from "../../figma/ImageWithFallback";
 import { toast } from "sonner";
 
 const optionalNumber = z.preprocess(
@@ -72,6 +74,8 @@ const toOptionalCents = (value: number | null | undefined) => {
   return toCents(value);
 };
 
+const MAX_LOGO_MB = 2;
+
 export function ProvidersManagement() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -102,6 +106,8 @@ export function ProvidersManagement() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Provider | null>(null);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
 
   const form = useForm<ProviderFormValues>({
     resolver: zodResolver(providerSchema),
@@ -111,8 +117,22 @@ export function ProvidersManagement() {
   const { errors } = formState;
 
   const upsertMutation = useMutation({
-    mutationFn: ({ id, data }: { id?: string; data: ProviderUpsertInput }) =>
-      id ? updateProvider(id, data) : createProvider(data),
+    mutationFn: async ({
+      id,
+      data,
+      logoFile: file,
+    }: {
+      id?: string;
+      data: ProviderUpsertInput;
+      logoFile: File | null;
+    }) => {
+      const payload = { ...data };
+      if (file) {
+        const { url } = await uploadAdminFile(file);
+        payload.logoUrl = url;
+      }
+      return id ? updateProvider(id, payload) : createProvider(payload);
+    },
     onSuccess: async (_data, variables) => {
       toast.success(
         variables.id ? t("providers.updated", "Provider updated") : t("providers.created", "Provider created")
@@ -120,6 +140,8 @@ export function ProvidersManagement() {
       setOpen(false);
       setEditing(null);
       reset(defaultValues);
+      setLogoFile(null);
+      setLogoPreviewUrl(null);
       await queryClient.invalidateQueries({ queryKey: PROVIDERS_QUERY_KEY });
     },
     onError: (error) => toast.error(getAdminErrorMessage(error, t, t("providers.saveFailed", "Unable to save provider"))),
@@ -133,12 +155,16 @@ export function ProvidersManagement() {
     if (!nextOpen) {
       setEditing(null);
       reset(defaultValues);
+      setLogoFile(null);
+      setLogoPreviewUrl(null);
     }
   };
 
   const openCreate = () => {
     setEditing(null);
     reset(defaultValues);
+    setLogoFile(null);
+    setLogoPreviewUrl(null);
     setOpen(true);
   };
 
@@ -161,6 +187,8 @@ export function ProvidersManagement() {
       description: provider.description || "",
       descriptionAr: provider.descriptionAr || "",
     });
+    setLogoFile(null);
+    setLogoPreviewUrl(null);
     setOpen(true);
   };
 
@@ -182,8 +210,30 @@ export function ProvidersManagement() {
       descriptionAr: values.descriptionAr?.trim() || null,
     };
 
-    await upsertMutation.mutateAsync({ id: editing?.id, data: payload });
+    await upsertMutation.mutateAsync({ id: editing?.id, data: payload, logoFile });
   });
+
+  useEffect(() => {
+    if (!logoFile) {
+      setLogoPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(logoFile);
+    setLogoPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [logoFile]);
+
+  const handleLogoChange = (file: File | null) => {
+    if (!file) {
+      setLogoFile(null);
+      return;
+    }
+    if (file.size > MAX_LOGO_MB * 1024 * 1024) {
+      toast.error(t("products.upload.too_large", "File too large"));
+      return;
+    }
+    setLogoFile(file);
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -303,8 +353,30 @@ export function ProvidersManagement() {
                 <Input {...register("contactPhone")} />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">{t("providers.logoUrl", "Logo URL")}</label>
-                <Input {...register("logoUrl")} />
+                <label className="text-sm font-medium">{t("providers.logoUrl", "Logo")}</label>
+                <div className="space-y-2">
+                  <Input type="file" accept="image/*" onChange={(event) => handleLogoChange(event.target.files?.[0] || null)} />
+                  {(logoPreviewUrl || form.watch("logoUrl")) && (
+                    <div className="w-24 h-24 rounded-lg overflow-hidden bg-muted">
+                      <ImageWithFallback
+                        src={logoPreviewUrl || form.watch("logoUrl") || ""}
+                        alt={form.watch("name") || "logo"}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setLogoFile(null);
+                      form.setValue("logoUrl", "");
+                    }}
+                  >
+                    {t("app.actions.clear", "Clear")}
+                  </Button>
+                </div>
               </div>
               <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-medium">{t("providers.description", "Description")}</label>

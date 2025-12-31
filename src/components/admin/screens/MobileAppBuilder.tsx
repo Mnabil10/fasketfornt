@@ -8,7 +8,11 @@ import { Textarea } from "../../ui/textarea";
 import { Switch } from "../../ui/switch";
 import { Label } from "../../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../ui/select";
+import { ImageWithFallback } from "../../figma/ImageWithFallback";
+import { uploadAdminFile } from "../../../services/uploads.service";
+import { getAdminErrorMessage } from "../../../lib/errors";
 import type { MobileAppConfig } from "../../../types/settings";
+import { toast } from "sonner";
 
 type LocalizedValue = { en?: string; ar?: string } | string | null | undefined;
 type LocalizedDraft = { en: string; ar: string };
@@ -35,6 +39,7 @@ const screenOptions = [
   "products",
 ];
 const sectionTypeOptions = ["hero", "promos", "categories", "bestSelling", "hotOffers"] as const;
+const MAX_IMAGE_MB = 2;
 
 const cloneConfig = (config: MobileAppConfig) => JSON.parse(JSON.stringify(config ?? {})) as MobileAppConfig;
 
@@ -249,18 +254,18 @@ export function MobileAppBuilder({ value, onChange }: MobileAppBuilderProps) {
               onChange={(locale, nextValue) => updateLocalizedField(["branding", "appName"], locale, nextValue)}
             />
             <div className="grid gap-4 md:grid-cols-3">
-              <Field
-                label={t("settings.mobileAppLogoUrl", "Logo URL")}
+              <ImageUploadField
+                label={t("settings.mobileAppLogoUrl", "Logo")}
                 value={value.branding?.logoUrl ?? ""}
                 onChange={(nextValue) => updateField(["branding", "logoUrl"], nextValue)}
               />
-              <Field
-                label={t("settings.mobileAppWordmarkUrl", "Wordmark URL")}
+              <ImageUploadField
+                label={t("settings.mobileAppWordmarkUrl", "Wordmark")}
                 value={value.branding?.wordmarkUrl ?? ""}
                 onChange={(nextValue) => updateField(["branding", "wordmarkUrl"], nextValue)}
               />
-              <Field
-                label={t("settings.mobileAppSplashUrl", "Splash image URL")}
+              <ImageUploadField
+                label={t("settings.mobileAppSplashUrl", "Splash image")}
                 value={value.branding?.splashUrl ?? ""}
                 onChange={(nextValue) => updateField(["branding", "splashUrl"], nextValue)}
               />
@@ -562,8 +567,8 @@ export function MobileAppBuilder({ value, onChange }: MobileAppBuilderProps) {
                     </Button>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
-                    <Field
-                      label={t("settings.mobileAppPromoImage", "Image URL")}
+                    <ImageUploadField
+                      label={t("settings.mobileAppPromoImage", "Image")}
                       value={promo.imageUrl ?? ""}
                       onChange={(nextValue) => updateField(["home", "promos", index, "imageUrl"], nextValue)}
                     />
@@ -773,6 +778,99 @@ function Field({
     <div className="space-y-2">
       <Label>{label}</Label>
       <Input type={type} value={value} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
+}
+
+function ImageUploadField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value?: string | null;
+  onChange: (nextValue: string) => void;
+}) {
+  const { t } = useTranslation();
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = React.useState(false);
+  const [sizeError, setSizeError] = React.useState<string | null>(null);
+
+  const handleFile = async (file: File | null) => {
+    if (!file) return;
+    if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
+      const msg = t("products.upload.too_large", "File too large");
+      setSizeError(msg);
+      toast.error(msg);
+      return;
+    }
+    setSizeError(null);
+    setUploading(true);
+    try {
+      const { url } = await uploadAdminFile(file);
+      onChange(url);
+    } catch (error) {
+      const msg = getAdminErrorMessage(error, t, t("common.notifications.error", "An error occurred"));
+      toast.error(msg);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <div
+        className="border-2 border-dashed rounded-lg p-3 text-sm text-muted-foreground"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          const file = event.dataTransfer.files?.[0];
+          if (file) {
+            void handleFile(file);
+          }
+        }}
+      >
+        <div className="space-y-3">
+          {value ? (
+            <div className="w-24 h-24 rounded-md overflow-hidden bg-muted">
+              <ImageWithFallback src={value} alt="upload" className="w-full h-full object-cover" />
+            </div>
+          ) : (
+            <div className="w-24 h-24 rounded-md bg-muted flex items-center justify-center text-xs">
+              {t("common.not_available", "N/A")}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={() => inputRef.current?.click()} disabled={uploading}>
+              {uploading ? t("common.saving", "Saving...") : t("app.actions.upload", "Upload")}
+            </Button>
+            {value ? (
+              <Button type="button" size="sm" variant="ghost" onClick={() => onChange("")}>
+                {t("app.actions.clear", "Clear")}
+              </Button>
+            ) : null}
+          </div>
+          <div className="space-y-1 text-xs text-muted-foreground">
+            <p>{t("settings.mobileAppImageHint", "Drop an image to upload.")}</p>
+            <p>{t("validation.imageType", "Use PNG, JPG, or WEBP (max {{size}}MB)", { size: MAX_IMAGE_MB })}</p>
+          </div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0] || null;
+              if (file) {
+                void handleFile(file);
+              }
+              event.currentTarget.value = "";
+            }}
+          />
+        </div>
+      </div>
+      {sizeError ? <p className="text-xs text-rose-600">{sizeError}</p> : null}
     </div>
   );
 }
