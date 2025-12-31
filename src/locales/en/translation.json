@@ -412,7 +412,9 @@
     },
     "stuck": "Stuck",
     "stuckOnly": "Stuck > 30m",
-    "transition_blocked": "Transition not allowed by backend policy"
+    "transition_blocked": "Transition not allowed by backend policy",
+    "automation_fallback": "Using fallback search by order ID because order code was not present in payload.",
+    "no_automation_hint": "No automation events found for this order (may be older data or backfill pending)."
   },
   "coupons": {
     "title": "Coupons",
@@ -660,7 +662,12 @@
     "loading": "Loading...",
     "manage": "Manage",
     "page": "page",
-    "page_size": "Page size"
+    "page_size": "Page size",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "from": "From",
+    "to": "To",
+    "not_available": "N/A"
   },
   "auth": {
     "sign_in_title": "Sign in to Fasket Dashboard",
@@ -801,7 +808,21 @@
     "status": "Status",
     "subtitle": "Monitor and replay notification events",
     "title": "Automation Outbox",
-    "type": "Type"
+    "type": "Type",
+    "active_filters": "Active filters",
+    "http_status": "HTTP",
+    "interval": "Scan interval",
+    "last_run": "Last run",
+    "never": "Never",
+    "ops_unknown": "Watcher status unavailable",
+    "ops_watcher": "Ops watcher status",
+    "orders_stuck_watcher": "Stuck orders watcher",
+    "search": "Search",
+    "thresholds": "Thresholds",
+    "thresholds_missing": "No thresholds configured",
+    "try_filters": "Try clearing filters or waiting for new events",
+    "type_hint": "No events loaded yet; showing common types",
+    "watcher_disabled_hint": "Watcher disabled—stuck orders alerts will not fire."
   },
   "reports": {
     "cogs": "COGS",
@@ -822,7 +843,10 @@
     "profit_subtitle": "Track revenue, COGS, and margins",
     "profit_title": "Profit Reports",
     "sales": "Sales",
-    "total": "Total"
+    "total": "Total",
+    "export_error": "Unable to export profit report",
+    "export_unavailable": "Export not available yet",
+    "export_xlsx_disabled": "XLSX not available"
   },
   "support": {
     "code_placeholder": "Order code",
@@ -837,6 +861,51 @@
     "response": "Response",
     "status": "Status",
     "subtitle": "Audit support bot lookups and quick order access",
-    "title": "Support Queries"
+    "title": "Support Queries",
+    "backfill_hint": "Suggest running support backfill: POST /api/v1/admin/support/backfill to restore masked phone + order code.",
+    "backfill_needed": "Many entries are unlinked to orders",
+    "no_order": "Order code unavailable",
+    "unavailable": "Unavailable",
+    "unlinked": "Unlinked query"
+  },
+  "billing": {
+    "title": "Billing",
+    "subtitle": "Manage plans, subscriptions, and invoices",
+    "plans": "Plans",
+    "subscriptions": "Subscriptions",
+    "invoices": "Invoices",
+    "days": "days"
+  },
+  "branches": {
+    "title": "Branches",
+    "subtitle": "Manage provider branches and locations",
+    "name": "Name",
+    "provider": "Provider",
+    "status": "Status",
+    "city": "City",
+    "region": "Region",
+    "address": "Address",
+    "location": "Location",
+    "lat": "Latitude",
+    "lng": "Longitude",
+    "slug": "Slug",
+    "search": "Search branches",
+    "created": "Branch created",
+    "updated": "Branch updated",
+    "edit": "Edit Branch",
+    "default": "Default branch"
+  },
+  "providers": {
+    "title": "Providers",
+    "subtitle": "Manage service providers",
+    "name": "Name",
+    "description": "Description",
+    "type": "Type",
+    "status": "Status",
+    "slug": "Slug",
+    "search": "Search providers",
+    "created": "Provider created",
+    "updated": "Provider updated",
+    "edit": "Edit Provider"
   }
 }
