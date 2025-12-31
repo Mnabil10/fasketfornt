@@ -9,6 +9,7 @@ import { Input } from "../../ui/input";
 import { Button } from "../../ui/button";
 import { Label } from "../../ui/label";
 import { Switch } from "../../ui/switch";
+import { Textarea } from "../../ui/textarea";
 import { toast } from "sonner";
 import { useSettingsAdmin } from "../../../hooks/api/useSettingsAdmin";
 import { useUpdateSettingsSection } from "../../../hooks/api/useUpdateSettingsSection";
@@ -38,6 +39,9 @@ const generalSchema = z.object({
 const deliverySchema = z.object({
   deliveryFee: z.coerce.number().min(0).default(0),
   freeDeliveryMinimum: z.coerce.number().min(0).default(0),
+  deliveryRatePerKm: z.coerce.number().min(0).nullable().optional(),
+  minDeliveryFee: z.coerce.number().min(0).nullable().optional(),
+  maxDeliveryFee: z.coerce.number().min(0).nullable().optional(),
   estimatedDeliveryTime: z.coerce.number().min(0).nullable().optional(),
   maxDeliveryRadius: z.coerce.number().min(0).nullable().optional(),
 });
@@ -84,15 +88,103 @@ const loyaltySchema = z.object({
   resetThreshold: z.coerce.number().min(0),
 });
 
+const mobileAppSchema = z.object({
+  configJson: z.string().optional(),
+});
+
 type GeneralFormValues = z.infer<typeof generalSchema>;
 type DeliveryFormValues = z.infer<typeof deliverySchema>;
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 type NotificationsFormValues = z.infer<typeof notificationsSchema>;
 type SystemFormValues = z.infer<typeof systemSchema>;
 type LoyaltyFormValues = z.infer<typeof loyaltySchema>;
+type MobileAppFormValues = z.infer<typeof mobileAppSchema>;
 
 type SettingsManagementProps = {
   initialSection?: string;
+};
+
+const mobileAppTemplate = {
+  branding: {
+    appName: { en: "Fasket", ar: "" },
+    logoUrl: "",
+    splashUrl: "",
+    wordmarkUrl: "",
+  },
+  theme: {
+    primary: "#E53935",
+    primaryStrong: "#C62828",
+    accent: "#FF857A",
+    background: "#F6F7F9",
+    surface: "#FFFFFF",
+    surfaceMuted: "#FAFAFA",
+    text: "#1A1A1A",
+    textStrong: "#2B2B2F",
+    textMuted: "#757575",
+    muted: "#757575",
+    mutedForeground: "#667085",
+    borderStrong: "rgba(0,0,0,0.1)",
+    borderSoft: "rgba(0,0,0,0.06)",
+    heroGradient: "linear-gradient(135deg, rgba(229,57,53,0.16), rgba(255,133,122,0.12))",
+    splashGradient: "linear-gradient(140deg, #E53935 0%, #c92b2b 45%, #0f172a 110%)",
+    fontBase: "\"Manrope\", \"Inter\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+    fontArabic: "\"Cairo\", \"Manrope\", \"Inter\", system-ui, -apple-system, \"Segoe UI\", sans-serif",
+  },
+  navigation: {
+    tabs: [
+      { id: "home", screen: "home", label: { en: "Home", ar: "" }, enabled: true },
+      { id: "categories", screen: "categories", label: { en: "Categories", ar: "" }, enabled: true },
+      { id: "cart", screen: "cart", label: { en: "Cart", ar: "" }, enabled: true },
+      { id: "help", screen: "help", label: { en: "Help", ar: "" }, enabled: true },
+      { id: "orders", screen: "orders", label: { en: "Orders", ar: "" }, enabled: true, requiresAuth: true },
+      { id: "profile", screen: "profile", label: { en: "Profile", ar: "" }, enabled: true, requiresAuth: true },
+    ],
+  },
+  home: {
+    hero: {
+      prompt: { en: "Start shopping today", ar: "" },
+      title: { en: "Welcome to Fasket", ar: "" },
+      subtitle: { en: "Fresh groceries and essentials delivered fast.", ar: "" },
+      pills: [
+        { label: { en: "30-45 min delivery", ar: "" }, icon: "clock" },
+        { label: { en: "Citywide coverage", ar: "" }, icon: "truck" },
+        { label: { en: "Quality picks", ar: "" }, icon: "star" },
+      ],
+    },
+    promos: [
+      {
+        imageUrl: "https://images.unsplash.com/photo-1705727209465-b292e4129a37?auto=format&fit=crop&w=1080&q=80",
+        title: { en: "Weekly deals", ar: "" },
+        subtitle: { en: "Save on essentials and favorites.", ar: "" },
+      },
+    ],
+    sections: [
+      { id: "hero", type: "hero", enabled: true },
+      { id: "promos", type: "promos", enabled: true },
+      { id: "categories", type: "categories", enabled: true },
+      { id: "best-selling", type: "bestSelling", enabled: true },
+      { id: "hot-offers", type: "hotOffers", enabled: true },
+    ],
+  },
+  content: {
+    support: {
+      phone: "",
+      email: "",
+      websiteUrl: "",
+      webAppUrl: "",
+      whatsapp: "",
+      serviceArea: { en: "", ar: "" },
+      workingHours: { en: "", ar: "" },
+      cityCoverage: { en: "", ar: "" },
+      playStoreUrl: "",
+      appStoreUrl: "",
+    },
+  },
+  features: {
+    guestCheckout: true,
+    coupons: true,
+    loyalty: true,
+  },
 };
 
 export function SettingsManagement({ initialSection }: SettingsManagementProps) {
@@ -105,12 +197,15 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
   const notificationsMutation = useUpdateSettingsSection("notifications");
   const systemMutation = useUpdateSettingsSection("system");
   const loyaltyMutation = useUpdateSettingsSection("loyalty");
+  const mobileAppMutation = useUpdateSettingsSection("mobileApp");
 
   const [activeTab, setActiveTab] = React.useState(() => {
     if (initialSection === "delivery") return "delivery";
     if (initialSection === "delivery-zones") return "delivery";
+    if (initialSection === "mobile-app" || initialSection === "mobileApp") return "mobile-app";
     return initialSection || "general";
   });
+  const mobileAppTemplateJson = React.useMemo(() => JSON.stringify(mobileAppTemplate, null, 2), []);
 
   const generalForm = useForm<GeneralFormValues>({
     resolver: zodResolver(generalSchema) as Resolver<GeneralFormValues>,
@@ -129,6 +224,9 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
     defaultValues: {
       deliveryFee: 0,
       freeDeliveryMinimum: 0,
+      deliveryRatePerKm: null,
+      minDeliveryFee: null,
+      maxDeliveryFee: null,
       estimatedDeliveryTime: null,
       maxDeliveryRadius: null,
     },
@@ -188,6 +286,13 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
     },
   });
 
+  const mobileAppForm = useForm<MobileAppFormValues>({
+    resolver: zodResolver(mobileAppSchema) as Resolver<MobileAppFormValues>,
+    defaultValues: {
+      configJson: "",
+    },
+  });
+
   useEffect(() => {
     if (settingsQuery.data?.general) {
       const g = settingsQuery.data.general as GeneralSettings;
@@ -210,6 +315,10 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
       deliveryFee: d.deliveryFee ?? (d.deliveryFeeCents != null ? d.deliveryFeeCents / 100 : 0),
       freeDeliveryMinimum:
         d.freeDeliveryMinimum ?? (d.freeDeliveryMinimumCents != null ? d.freeDeliveryMinimumCents / 100 : 0),
+      deliveryRatePerKm:
+        d.deliveryRatePerKm ?? (d.deliveryRatePerKmCents != null ? d.deliveryRatePerKmCents / 100 : null),
+      minDeliveryFee: d.minDeliveryFee ?? (d.minDeliveryFeeCents != null ? d.minDeliveryFeeCents / 100 : null),
+      maxDeliveryFee: d.maxDeliveryFee ?? (d.maxDeliveryFeeCents != null ? d.maxDeliveryFeeCents / 100 : null),
       estimatedDeliveryTime: d.estimatedDeliveryTime ?? null,
       maxDeliveryRadius: d.maxDeliveryRadius ?? null,
     });
@@ -273,6 +382,13 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
     });
   }, [settingsQuery.data?.loyalty, loyaltyForm]);
 
+  useEffect(() => {
+    const raw = settingsQuery.data?.mobileApp ?? null;
+    if (raw === undefined) return;
+    const json = raw ? JSON.stringify(raw, null, 2) : "";
+    mobileAppForm.reset({ configJson: json });
+  }, [settingsQuery.data?.mobileApp, mobileAppForm]);
+
   const handleGeneralSave = generalForm.handleSubmit(async (values) => {
     try {
       await generalMutation.mutateAsync(values);
@@ -283,11 +399,22 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
   });
 
   const handleDeliverySave = deliveryForm.handleSubmit(async (values) => {
+    const toSafeNumber = (value: number | null | undefined) =>
+      Number.isFinite(value as number) ? (value as number) : 0;
+    const ratePerKm = toSafeNumber(values.deliveryRatePerKm);
+    const minFee = toSafeNumber(values.minDeliveryFee);
+    const maxFee = toSafeNumber(values.maxDeliveryFee);
     const payload: DeliverySettings = {
       deliveryFee: values.deliveryFee,
       deliveryFeeCents: Math.round(values.deliveryFee * 100),
       freeDeliveryMinimum: values.freeDeliveryMinimum,
       freeDeliveryMinimumCents: Math.round(values.freeDeliveryMinimum * 100),
+      deliveryRatePerKm: values.deliveryRatePerKm ?? null,
+      deliveryRatePerKmCents: Math.round(ratePerKm * 100),
+      minDeliveryFee: values.minDeliveryFee ?? null,
+      minDeliveryFeeCents: Math.round(minFee * 100),
+      maxDeliveryFee: values.maxDeliveryFee ?? null,
+      maxDeliveryFeeCents: Math.round(maxFee * 100),
       estimatedDeliveryTime: values.estimatedDeliveryTime ?? null,
       maxDeliveryRadius: values.maxDeliveryRadius ?? null,
     };
@@ -372,6 +499,27 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
     }
   });
 
+  const handleMobileAppSave = mobileAppForm.handleSubmit(async (values) => {
+    const raw = values.configJson?.trim() ?? "";
+    if (!raw) {
+      try {
+        await mobileAppMutation.mutateAsync(null);
+        toast.success(t("settings.saved", "Settings updated"));
+      } catch (error) {
+        toast.error(getAdminErrorMessage(error, t));
+      }
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      await mobileAppMutation.mutateAsync(parsed);
+      toast.success(t("settings.saved", "Settings updated"));
+    } catch (error) {
+      toast.error(t("settings.mobileAppInvalid", "Mobile app config must be valid JSON."));
+    }
+  });
+
   if (settingsQuery.isLoading) {
     return (
       <div className="p-6">
@@ -419,6 +567,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
           <TabsTrigger value="payments">{t("settings.payments", "Payments")}</TabsTrigger>
           <TabsTrigger value="notifications">{t("settings.notifications", "Notifications")}</TabsTrigger>
           <TabsTrigger value="system">{t("settings.system", "System")}</TabsTrigger>
+          <TabsTrigger value="mobile-app">{t("settings.mobileApp", "Mobile App")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="mt-4">
@@ -477,6 +626,18 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                   <div className="space-y-2">
                     <Label>{t("settings.freeDeliveryThreshold", "Free delivery minimum (currency)")}</Label>
                     <Input type="number" step="0.01" {...deliveryForm.register("freeDeliveryMinimum", { valueAsNumber: true })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t("settings.deliveryRatePerKm", "Rate per km (currency)")}</Label>
+                    <Input type="number" step="0.01" {...deliveryForm.register("deliveryRatePerKm", { valueAsNumber: true })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t("settings.minDeliveryFee", "Min delivery fee (currency)")}</Label>
+                    <Input type="number" step="0.01" {...deliveryForm.register("minDeliveryFee", { valueAsNumber: true })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t("settings.maxDeliveryFee", "Max delivery fee (currency)")}</Label>
+                    <Input type="number" step="0.01" {...deliveryForm.register("maxDeliveryFee", { valueAsNumber: true })} />
                   </div>
                   <div className="space-y-2">
                     <Label>{t("settings.estimatedDeliveryTime", "Estimated delivery time (minutes)")}</Label>
@@ -796,6 +957,53 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                   <Button type="submit" disabled={systemMutation.isPending}>
                     {systemMutation.isPending ? t("common.saving", "Saving...") : t("common.save", "Save")}
                   </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="mobile-app" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("settings.mobileApp", "Mobile App")}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <form className="space-y-4" onSubmit={handleMobileAppSave}>
+                <div className="space-y-2">
+                  <Label>{t("settings.mobileAppConfig", "Mobile app configuration (JSON)")}</Label>
+                  <Textarea
+                    rows={18}
+                    className="font-mono text-xs"
+                    placeholder={mobileAppTemplateJson}
+                    {...mobileAppForm.register("configJson")}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "settings.mobileAppHint",
+                      "Use JSON to control branding, theme, navigation, and home sections."
+                    )}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      mobileAppForm.setValue("configJson", mobileAppTemplateJson, { shouldDirty: true })
+                    }
+                  >
+                    {t("settings.mobileAppLoadTemplate", "Load template")}
+                  </Button>
+                  <Button type="submit" disabled={mobileAppMutation.isPending}>
+                    {mobileAppMutation.isPending ? t("common.saving", "Saving...") : t("common.save", "Save")}
+                  </Button>
+                </div>
+                <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+                  <p className="font-semibold text-foreground mb-2">
+                    {t("settings.mobileAppTemplateTitle", "Template preview")}
+                  </p>
+                  <pre className="whitespace-pre-wrap break-words">{mobileAppTemplateJson}</pre>
                 </div>
               </form>
             </CardContent>

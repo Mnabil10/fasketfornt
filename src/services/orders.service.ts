@@ -76,6 +76,9 @@ type OrderDto = {
   totalCents?: number;
   customer?: Order["customer"];
   user?: Order["customer"];
+  guestName?: string | null;
+  guestPhone?: string | null;
+  guestAddress?: Record<string, any> | null;
   deliveryZone?: DeliveryZoneDto | null;
   zone?: DeliveryZoneDto | null;
   driver?: DeliveryDriverDto | null;
@@ -189,7 +192,12 @@ function normalizeOrderItem(item: OrderItemDto): OrderItem {
 }
 
 function normalizeOrderSummary(order: OrderDto): Order {
-  const customer = order.customer ?? order.user ?? { id: "", name: "", phone: "" };
+  const customer =
+    order.customer ??
+    order.user ??
+    (order.guestName || order.guestPhone
+      ? { id: order.id, name: order.guestName ?? "Guest", phone: order.guestPhone ?? "" }
+      : { id: "", name: "", phone: "" });
   return {
     id: order.id,
     code: order.code || order.id,
@@ -206,6 +214,20 @@ function normalizeOrderSummary(order: OrderDto): Order {
 }
 
 function normalizeOrderDetail(order: OrderDto): OrderDetail {
+  const guestAddress = order.guestAddress ?? null;
+  const address =
+    order.address ??
+    (guestAddress
+      ? {
+          line1: guestAddress.fullAddress ?? guestAddress.street ?? "",
+          line2: guestAddress.street ?? null,
+          building: guestAddress.building ?? null,
+          apartment: guestAddress.apartment ?? null,
+          city: guestAddress.city ?? null,
+          region: guestAddress.region ?? null,
+          notes: guestAddress.notes ?? null,
+        }
+      : null);
   return {
     ...normalizeOrderSummary(order),
     items: Array.isArray(order.items) ? order.items.map(normalizeOrderItem) : [],
@@ -213,7 +235,7 @@ function normalizeOrderDetail(order: OrderDto): OrderDetail {
     couponDiscountCents: order.couponDiscountCents ?? order.discountCents ?? 0,
     loyaltyDiscountCents: order.loyaltyDiscountCents ?? 0,
     shippingFeeCents: order.shippingFeeCents ?? 0,
-    address: order.address ?? null,
+    address,
     notes: order.note ?? order.notes ?? null,
     metadata: order.metadata,
     currency: order.currency,

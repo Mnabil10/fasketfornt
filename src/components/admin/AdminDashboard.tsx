@@ -32,6 +32,9 @@ import {
   Flame,
   Ticket,
   Truck,
+  Store,
+  MapPin,
+  CreditCard,
 } from "lucide-react";
 const DashboardOverview = React.lazy(() =>
   import("./screens/DashboardOverview").then((m) => ({ default: m.DashboardOverview }))
@@ -51,6 +54,9 @@ import { CustomersManagement } from "./screens/CustomersManagement";
 import { AutomationOutboxPage } from "./screens/AutomationOutboxPage";
 import { ProfitReportsPage } from "./screens/ProfitReportsPage";
 import { SupportQueriesPage } from "./screens/SupportQueriesPage";
+import { ProvidersManagement } from "./screens/ProvidersManagement";
+import { BranchesManagement } from "./screens/BranchesManagement";
+import { BillingManagement } from "./screens/BillingManagement";
 import { useTranslation } from "react-i18next";
 import BrandLogo from "../common/BrandLogo";
 import { fetchDashboard, type DashboardSummary } from "../../services/dashboard.service";
@@ -64,12 +70,15 @@ import { getAdminErrorMessage } from "../../lib/errors";
 
 export type AdminScreen =
   | "dashboard"
+  | "providers"
+  | "branches"
   | "categories"
   | "products"
   | "hot-offers"
   | "orders"
   | "customers"
   | "coupons"
+  | "billing"
   | "settings"
   | "delivery-drivers"
   | "automation-outbox"
@@ -100,7 +109,7 @@ export function AdminDashboard() {
   const pathSegments = useMemo(() => location.pathname.replace(/^\/+/, "").split("/").filter(Boolean), [location.pathname]);
   const derivedScreen: AdminScreen =
     (pathSegments[0] as AdminScreen | undefined) &&
-    (["dashboard", "categories", "products", "hot-offers", "orders", "customers", "coupons", "settings", "delivery-drivers", "automation-outbox", "reports", "support"] as const).includes(
+    (["dashboard", "providers", "branches", "categories", "products", "hot-offers", "orders", "customers", "coupons", "billing", "settings", "delivery-drivers", "automation-outbox", "reports", "support"] as const).includes(
       pathSegments[0] as AdminScreen
     )
       ? (pathSegments[0] as AdminScreen)
@@ -128,7 +137,7 @@ export function AdminDashboard() {
   const role = (user?.role || "").toUpperCase();
   const accessibleScreens = useMemo<AdminScreen[]>(() => {
     const base: AdminScreen[] = ["categories", "products", "hot-offers", "orders"];
-    const adminExtras: AdminScreen[] = ["dashboard", "customers", "coupons", "settings", "delivery-drivers"];
+    const adminExtras: AdminScreen[] = ["dashboard", "providers", "branches", "customers", "billing", "coupons", "settings", "delivery-drivers"];
     const automationScreens: AdminScreen[] = perms.canViewAutomation ? ["automation-outbox"] : [];
     const profitScreens: AdminScreen[] = perms.canViewProfit ? ["reports"] : [];
     const supportScreens: AdminScreen[] = perms.canViewSupport ? ["support"] : [];
@@ -230,12 +239,15 @@ export function AdminDashboard() {
     const lowStockCount = summary?.lowStock?.length ?? null;
     const all = [
       { id: "dashboard" as const, icon: LayoutDashboard, badge: null },
+      { id: "providers" as const, icon: Store, badge: null },
+      { id: "branches" as const, icon: MapPin, badge: null },
       { id: "categories" as const, icon: Grid3x3, badge: null },
       { id: "products" as const, icon: Package, badge: lowStockCount && lowStockCount > 0 ? lowStockCount : null },
       { id: "hot-offers" as const, icon: Flame, badge: null },
       { id: "orders" as const, icon: ShoppingCart, badge: ordersCount },
       { id: "delivery-drivers" as const, icon: Truck, badge: null },
       { id: "customers" as const, icon: Users, badge: customersCount },
+      { id: "billing" as const, icon: CreditCard, badge: null },
       { id: "coupons" as const, icon: Ticket, badge: null },
       { id: "settings" as const, icon: Settings, badge: null },
       { id: "automation-outbox" as const, icon: Bell, badge: null },
@@ -247,12 +259,15 @@ export function AdminDashboard() {
 
   const defaultLabels: Record<AdminScreen, string> = {
     dashboard: "Dashboard",
+    providers: "Providers",
+    branches: "Branches",
     categories: "Categories",
     products: "Products",
     "hot-offers": "Hot Offers",
     orders: "Orders",
     customers: "Customers",
     coupons: "Coupons",
+    billing: "Billing",
     settings: "Settings",
     "delivery-drivers": "Delivery Drivers",
     "automation-outbox": "Automation Outbox",
@@ -352,6 +367,10 @@ export function AdminDashboard() {
             <DashboardOverview {...p} />
           </React.Suspense>
         );
+      case "providers":
+        return <ProvidersManagement />;
+      case "branches":
+        return <BranchesManagement />;
       case "categories":
         return <CategoriesManagement {...p} />;
       case "products":
@@ -369,6 +388,8 @@ export function AdminDashboard() {
         return <OrdersManagement initialOrderId={secondary} />;
       case "customers":
         return <CustomersManagement />;
+      case "billing":
+        return <BillingManagement />;
       case "coupons":
         return <CouponsManagement {...p} />;
       case "settings":

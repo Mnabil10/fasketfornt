@@ -60,6 +60,18 @@ function normalizeDeliverySettings(delivery?: DeliverySettings & { deliveryZones
     freeDeliveryMinimumCents:
       delivery?.freeDeliveryMinimumCents ??
       (delivery?.freeDeliveryMinimum != null ? Math.round(delivery.freeDeliveryMinimum * 100) : undefined),
+    deliveryRatePerKm: delivery?.deliveryRatePerKm ?? null,
+    deliveryRatePerKmCents:
+      delivery?.deliveryRatePerKmCents ??
+      (delivery?.deliveryRatePerKm != null ? Math.round(delivery.deliveryRatePerKm * 100) : undefined),
+    minDeliveryFee: delivery?.minDeliveryFee ?? null,
+    minDeliveryFeeCents:
+      delivery?.minDeliveryFeeCents ??
+      (delivery?.minDeliveryFee != null ? Math.round(delivery.minDeliveryFee * 100) : undefined),
+    maxDeliveryFee: delivery?.maxDeliveryFee ?? null,
+    maxDeliveryFeeCents:
+      delivery?.maxDeliveryFeeCents ??
+      (delivery?.maxDeliveryFee != null ? Math.round(delivery.maxDeliveryFee * 100) : undefined),
     estimatedDeliveryTime: delivery?.estimatedDeliveryTime ?? null,
     maxDeliveryRadius: delivery?.maxDeliveryRadius ?? null,
     deliveryZones: zones,
@@ -93,6 +105,7 @@ function mapSettingsFromApi(data: SettingsResponse & { payment?: PaymentSettings
 function mapSectionToApi(section: keyof SettingsPayload): string {
   if (section === "payments") return "payment";
   if (section === "payment") return "payment";
+  if (section === "mobileApp") return "mobile-app";
   return section;
 }
 

@@ -14,6 +14,12 @@ export type DeliverySettings = {
   deliveryFeeCents?: number;
   freeDeliveryMinimum?: number;
   freeDeliveryMinimumCents?: number;
+  deliveryRatePerKm?: number | null;
+  deliveryRatePerKmCents?: number | null;
+  minDeliveryFee?: number | null;
+  minDeliveryFeeCents?: number | null;
+  maxDeliveryFee?: number | null;
+  maxDeliveryFeeCents?: number | null;
   estimatedDeliveryTime?: number | null;
   maxDeliveryRadius?: number | null;
   deliveryZones?: DeliveryZone[];
@@ -68,6 +74,8 @@ export type LoyaltySettings = {
   resetThreshold?: number;
 };
 
+export type MobileAppConfig = Record<string, any>;
+
 export type SettingsPayload = {
   general?: GeneralSettings;
   delivery?: DeliverySettings;
@@ -76,6 +84,7 @@ export type SettingsPayload = {
   payments?: PaymentSettings; // kept for UI compatibility
   notifications?: NotificationsSettings;
   system?: SystemSettings;
+  mobileApp?: MobileAppConfig | null;
 };
 
 export type SettingsResponse = SettingsPayload & { updatedAt?: string };
