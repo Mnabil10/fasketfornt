@@ -96,6 +96,9 @@ export function ProvidersManagement() {
   const items = providersQuery.data?.items ?? [];
   const total = providersQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const resolveTypeLabel = (value: ProviderType) => t(`providers.types.${value}`, value);
+  const resolveStatusLabel = (value: ProviderStatus) => t(`providers.statuses.${value}`, value);
+  const resolveDeliveryModeLabel = (value: DeliveryMode) => t(`common.deliveryModes.${value}`, value);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Provider | null>(null);
@@ -228,7 +231,7 @@ export function ProvidersManagement() {
                       <SelectContent>
                         {["SUPERMARKET", "PHARMACY", "RESTAURANT", "SERVICE", "OTHER"].map((item) => (
                           <SelectItem key={item} value={item}>
-                            {item}
+                            {resolveTypeLabel(item as ProviderType)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -249,7 +252,7 @@ export function ProvidersManagement() {
                       <SelectContent>
                         {["PENDING", "ACTIVE", "SUSPENDED", "DISABLED"].map((item) => (
                           <SelectItem key={item} value={item}>
-                            {item}
+                            {resolveStatusLabel(item as ProviderStatus)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -270,7 +273,7 @@ export function ProvidersManagement() {
                       <SelectContent>
                         {["PLATFORM", "MERCHANT"].map((item) => (
                           <SelectItem key={item} value={item}>
-                            {item}
+                            {resolveDeliveryModeLabel(item as DeliveryMode)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -347,7 +350,7 @@ export function ProvidersManagement() {
                 <SelectItem value="all">{t("common.all", "All")}</SelectItem>
                 {["SUPERMARKET", "PHARMACY", "RESTAURANT", "SERVICE", "OTHER"].map((item) => (
                   <SelectItem key={item} value={item}>
-                    {item}
+                    {resolveTypeLabel(item as ProviderType)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -360,7 +363,7 @@ export function ProvidersManagement() {
                 <SelectItem value="all">{t("common.all", "All")}</SelectItem>
                 {["PENDING", "ACTIVE", "SUSPENDED", "DISABLED"].map((item) => (
                   <SelectItem key={item} value={item}>
-                    {item}
+                    {resolveStatusLabel(item as ProviderStatus)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -403,9 +406,9 @@ export function ProvidersManagement() {
                   {items.map((provider) => (
                     <TableRow key={provider.id}>
                       <TableCell className="font-medium">{provider.name}</TableCell>
-                      <TableCell>{provider.type}</TableCell>
-                      <TableCell>{provider.status}</TableCell>
-                      <TableCell>{provider.deliveryMode ?? "-"}</TableCell>
+                      <TableCell>{resolveTypeLabel(provider.type)}</TableCell>
+                      <TableCell>{resolveStatusLabel(provider.status)}</TableCell>
+                      <TableCell>{provider.deliveryMode ? resolveDeliveryModeLabel(provider.deliveryMode) : "-"}</TableCell>
                       <TableCell>
                         {provider.deliveryRatePerKmCents != null ? fmtEGP(provider.deliveryRatePerKmCents) : "-"}
                       </TableCell>

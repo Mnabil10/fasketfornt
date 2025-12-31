@@ -107,6 +107,8 @@ export function BranchesManagement() {
   const items = branchesQuery.data?.items ?? [];
   const total = branchesQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const resolveStatusLabel = (value: BranchStatus) => t(`branches.statuses.${value}`, value);
+  const resolveDeliveryModeLabel = (value: DeliveryMode) => t(`common.deliveryModes.${value}`, value);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Branch | null>(null);
@@ -277,7 +279,7 @@ export function BranchesManagement() {
                       <SelectContent>
                         {["ACTIVE", "INACTIVE"].map((item) => (
                           <SelectItem key={item} value={item}>
-                            {item}
+                            {resolveStatusLabel(item as BranchStatus)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -310,7 +312,7 @@ export function BranchesManagement() {
                       <SelectContent>
                         {["PLATFORM", "MERCHANT"].map((item) => (
                           <SelectItem key={item} value={item}>
-                            {item}
+                            {resolveDeliveryModeLabel(item as DeliveryMode)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -414,7 +416,7 @@ export function BranchesManagement() {
                 <SelectItem value="all">{t("common.all", "All")}</SelectItem>
                 {["ACTIVE", "INACTIVE"].map((item) => (
                   <SelectItem key={item} value={item}>
-                    {item}
+                    {resolveStatusLabel(item as BranchStatus)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -460,7 +462,7 @@ export function BranchesManagement() {
                         {branch.name} {branch.isDefault ? `(${t("branches.defaultBadge", "Default")})` : ""}
                       </TableCell>
                       <TableCell>{branch.provider?.name ?? branch.providerId}</TableCell>
-                      <TableCell>{branch.status}</TableCell>
+                      <TableCell>{resolveStatusLabel(branch.status)}</TableCell>
                       <TableCell>
                         {branch.lat != null && branch.lng != null ? `${branch.lat}, ${branch.lng}` : "-"}
                       </TableCell>

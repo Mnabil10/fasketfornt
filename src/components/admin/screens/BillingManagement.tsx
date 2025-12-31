@@ -34,7 +34,7 @@ import type {
   SubscriptionStatus,
   SubscriptionUpsertInput,
 } from "../../../types/subscription";
-import type { Invoice, InvoiceFilters, InvoiceStatus } from "../../../types/invoice";
+import type { Invoice, InvoiceFilters, InvoiceItemType, InvoiceStatus } from "../../../types/invoice";
 import { toast } from "sonner";
 
 const numberField = z.preprocess(
@@ -152,6 +152,7 @@ export function BillingManagement() {
 function PlansTab() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const resolveIntervalLabel = (value: BillingInterval) => t(`billing.intervals.${value}`, value);
   const [q, setQ] = useState("");
   const [interval, setInterval] = useState<BillingInterval | "all">("all");
   const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
@@ -293,7 +294,7 @@ function PlansTab() {
                       <SelectContent>
                         {["MONTHLY", "YEARLY"].map((item) => (
                           <SelectItem key={item} value={item}>
-                            {item}
+                            {resolveIntervalLabel(item as BillingInterval)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -366,7 +367,7 @@ function PlansTab() {
                 <SelectItem value="all">{t("common.all", "All")}</SelectItem>
                 {["MONTHLY", "YEARLY"].map((item) => (
                   <SelectItem key={item} value={item}>
-                    {item}
+                    {resolveIntervalLabel(item as BillingInterval)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -423,7 +424,7 @@ function PlansTab() {
                           <span className="text-xs text-muted-foreground">{plan.code}</span>
                         </div>
                       </TableCell>
-                      <TableCell>{plan.billingInterval}</TableCell>
+                      <TableCell>{resolveIntervalLabel(plan.billingInterval)}</TableCell>
                       <TableCell>{fmtCurrency(plan.amountCents, plan.currency || "EGP")}</TableCell>
                       <TableCell>{(plan.commissionRateBps / 100).toFixed(2)}%</TableCell>
                       <TableCell>{plan.trialDays} {t("billing.days", "days")}</TableCell>
@@ -469,6 +470,8 @@ function PlansTab() {
 function SubscriptionsTab() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const resolveStatusLabel = (value: SubscriptionStatus) => t(`billing.subscriptionStatuses.${value}`, value);
+  const toLabel = t("common.to", "to");
   const [providerId, setProviderId] = useState<string>("all");
   const [planId, setPlanId] = useState<string>("all");
   const [status, setStatus] = useState<SubscriptionStatus | "all">("all");
@@ -651,7 +654,7 @@ function SubscriptionsTab() {
                         <SelectItem value="AUTO">{t("billing.subscriptionAuto", "Auto (plan default)")}</SelectItem>
                         {["TRIALING", "ACTIVE", "PAST_DUE", "CANCELED", "EXPIRED"].map((item) => (
                           <SelectItem key={item} value={item}>
-                            {item}
+                            {resolveStatusLabel(item as SubscriptionStatus)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -729,7 +732,7 @@ function SubscriptionsTab() {
                 <SelectItem value="all">{t("common.all", "All")}</SelectItem>
                 {["TRIALING", "ACTIVE", "PAST_DUE", "CANCELED", "EXPIRED"].map((item) => (
                   <SelectItem key={item} value={item}>
-                    {item}
+                    {resolveStatusLabel(item as SubscriptionStatus)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -778,11 +781,11 @@ function SubscriptionsTab() {
                       </TableCell>
                       <TableCell>{subscription.plan?.name ?? subscription.planId}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{subscription.status}</Badge>
+                        <Badge variant="outline">{resolveStatusLabel(subscription.status)}</Badge>
                       </TableCell>
                       <TableCell>
                         {subscription.currentPeriodStart && subscription.currentPeriodEnd
-                          ? `${formatDate(subscription.currentPeriodStart)} → ${formatDate(subscription.currentPeriodEnd)}`
+                          ? `${formatDate(subscription.currentPeriodStart)} ${toLabel} ${formatDate(subscription.currentPeriodEnd)}`
                           : "-"}
                       </TableCell>
                       <TableCell>{formatDate(subscription.trialEndsAt)}</TableCell>
@@ -833,6 +836,9 @@ function InvoicesTab() {
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 20;
+  const resolveStatusLabel = (value: InvoiceStatus) => t(`billing.invoiceStatuses.${value}`, value);
+  const resolveItemTypeLabel = (value: InvoiceItemType) => t(`billing.invoiceItemTypes.${value}`, value);
+  const toLabel = t("common.to", "to");
 
   const providersQuery = useProviders({ page: 1, pageSize: 200 }, { enabled: true });
   const providers = providersQuery.data?.items ?? [];
@@ -904,7 +910,7 @@ function InvoicesTab() {
                 <SelectItem value="all">{t("common.all", "All")}</SelectItem>
                 {["DRAFT", "OPEN", "PAID", "VOID"].map((item) => (
                   <SelectItem key={item} value={item}>
-                    {item}
+                    {resolveStatusLabel(item as InvoiceStatus)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -918,7 +924,7 @@ function InvoicesTab() {
                   setPage(1);
                 }}
               />
-              <span className="text-sm text-muted-foreground">→</span>
+              <span className="text-sm text-muted-foreground">{toLabel}</span>
               <Input
                 type="date"
                 value={to}
@@ -967,13 +973,13 @@ function InvoicesTab() {
                       <TableCell className="font-medium">{invoice.number}</TableCell>
                       <TableCell>{invoice.provider?.name ?? invoice.providerId}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{invoice.status}</Badge>
+                        <Badge variant="outline">{resolveStatusLabel(invoice.status)}</Badge>
                       </TableCell>
                       <TableCell>{fmtCurrency(invoice.amountDueCents, invoice.currency || "EGP")}</TableCell>
                       <TableCell>{fmtCurrency(invoice.amountPaidCents, invoice.currency || "EGP")}</TableCell>
                       <TableCell>
                         {invoice.periodStart && invoice.periodEnd
-                          ? `${formatDate(invoice.periodStart)} → ${formatDate(invoice.periodEnd)}`
+                          ? `${formatDate(invoice.periodStart)} ${toLabel} ${formatDate(invoice.periodEnd)}`
                           : "-"}
                       </TableCell>
                       <TableCell className="text-right">
@@ -1028,7 +1034,7 @@ function InvoicesTab() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-muted-foreground">{t("billing.invoiceStatus", "Status")}</p>
-                  <Badge variant="outline">{invoiceDetailsQuery.data.status}</Badge>
+                  <Badge variant="outline">{resolveStatusLabel(invoiceDetailsQuery.data.status)}</Badge>
                 </div>
                 <div className="space-y-1">
                   <p className="text-muted-foreground">{t("billing.invoiceProvider", "Provider")}</p>
@@ -1072,7 +1078,7 @@ function InvoicesTab() {
                     <TableBody>
                       {invoiceDetailsQuery.data.items.map((item) => (
                         <TableRow key={item.id}>
-                          <TableCell>{item.type}</TableCell>
+                          <TableCell>{resolveItemTypeLabel(item.type)}</TableCell>
                           <TableCell>{item.description || "-"}</TableCell>
                           <TableCell className="text-right">{fmtCurrency(item.amountCents, detailCurrency)}</TableCell>
                         </TableRow>
@@ -1099,7 +1105,7 @@ function InvoicesTab() {
                     <TableBody>
                       {invoiceDetailsQuery.data.ledgerEntries.map((entry) => (
                         <TableRow key={entry.id}>
-                          <TableCell>{entry.type}</TableCell>
+                          <TableCell>{resolveItemTypeLabel(entry.type)}</TableCell>
                           <TableCell>{entry.orderId ?? "-"}</TableCell>
                           <TableCell>{entry.orderGroupId ?? "-"}</TableCell>
                           <TableCell className="text-right">{fmtCurrency(entry.amountCents, detailCurrency)}</TableCell>

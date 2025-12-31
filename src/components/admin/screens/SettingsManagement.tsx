@@ -17,10 +17,12 @@ import { getAdminErrorMessage } from "../../../lib/errors";
 import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
 import { ErrorState } from "../common/ErrorState";
 import { EmptyState } from "../common/EmptyState";
+import { MobileAppBuilder } from "./MobileAppBuilder";
 import type {
   DeliverySettings,
   GeneralSettings,
   LoyaltySettings,
+  MobileAppConfig,
   PaymentSettings,
   NotificationsSettings,
   SystemSettings,
@@ -88,17 +90,12 @@ const loyaltySchema = z.object({
   resetThreshold: z.coerce.number().min(0),
 });
 
-const mobileAppSchema = z.object({
-  configJson: z.string().optional(),
-});
-
 type GeneralFormValues = z.infer<typeof generalSchema>;
 type DeliveryFormValues = z.infer<typeof deliverySchema>;
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 type NotificationsFormValues = z.infer<typeof notificationsSchema>;
 type SystemFormValues = z.infer<typeof systemSchema>;
 type LoyaltyFormValues = z.infer<typeof loyaltySchema>;
-type MobileAppFormValues = z.infer<typeof mobileAppSchema>;
 
 type SettingsManagementProps = {
   initialSection?: string;
@@ -187,6 +184,107 @@ const mobileAppTemplate = {
   },
 };
 
+type MobileAppLocalizedValue = { en?: string; ar?: string } | string | null | undefined;
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const cloneMobileAppConfig = (config: MobileAppConfig) =>
+  JSON.parse(JSON.stringify(config ?? {})) as MobileAppConfig;
+
+const mergeDeep = (target: any, source: any) => {
+  Object.keys(source).forEach((key) => {
+    const value = source[key];
+    if (Array.isArray(value)) {
+      target[key] = value.map((item) => (isPlainObject(item) ? mergeDeep({}, item) : item));
+      return;
+    }
+    if (isPlainObject(value)) {
+      target[key] = mergeDeep(isPlainObject(target[key]) ? target[key] : {}, value);
+      return;
+    }
+    target[key] = value;
+  });
+  return target;
+};
+
+const normalizeLocalized = (value: MobileAppLocalizedValue, fallback?: MobileAppLocalizedValue) => {
+  const resolved = value ?? fallback;
+  if (typeof resolved === "string") return { en: resolved, ar: "" };
+  if (resolved && typeof resolved === "object") return { en: resolved.en ?? "", ar: resolved.ar ?? "" };
+  return { en: "", ar: "" };
+};
+
+const normalizeMobileAppConfig = (raw: MobileAppConfig | null | undefined) => {
+  const base = cloneMobileAppConfig(mobileAppTemplate);
+  const merged = mergeDeep(base, raw ?? {});
+
+  merged.branding = merged.branding ?? {};
+  merged.branding.appName = normalizeLocalized(merged.branding.appName, base.branding.appName);
+
+  merged.navigation = merged.navigation ?? {};
+  const tabsSource = Array.isArray(merged.navigation.tabs) ? merged.navigation.tabs : base.navigation.tabs;
+  merged.navigation.tabs = tabsSource.map((tab: any, index: number) => ({
+    ...tab,
+    id: tab.id ?? tab.screen ?? `tab-${index}`,
+    screen: tab.screen ?? tab.id ?? "home",
+    icon: tab.icon ?? tab.id ?? tab.screen ?? "home",
+    label: normalizeLocalized(tab.label, base.navigation.tabs?.[index]?.label),
+    enabled: tab.enabled ?? true,
+    requiresAuth: tab.requiresAuth ?? false,
+    order: typeof tab.order === "number" ? tab.order : index,
+  }));
+
+  merged.home = merged.home ?? {};
+  const heroBase = base.home?.hero ?? {};
+  const hero = merged.home.hero ?? {};
+  const pillsSource = Array.isArray(hero.pills) ? hero.pills : heroBase.pills ?? [];
+  merged.home.hero = {
+    ...hero,
+    prompt: normalizeLocalized(hero.prompt, heroBase.prompt),
+    title: normalizeLocalized(hero.title, heroBase.title),
+    subtitle: normalizeLocalized(hero.subtitle, heroBase.subtitle),
+    pills: pillsSource.map((pill: any, index: number) => ({
+      ...pill,
+      label: normalizeLocalized(pill.label, heroBase.pills?.[index]?.label),
+      icon: typeof pill.icon === "string" ? pill.icon : heroBase.pills?.[index]?.icon ?? "sparkles",
+    })),
+  };
+
+  const promosSource = Array.isArray(merged.home.promos) ? merged.home.promos : base.home?.promos ?? [];
+  merged.home.promos = promosSource.map((promo: any, index: number) => ({
+    ...promo,
+    imageUrl: promo.imageUrl ?? base.home?.promos?.[index]?.imageUrl ?? "",
+    title: normalizeLocalized(promo.title, base.home?.promos?.[index]?.title),
+    subtitle: normalizeLocalized(promo.subtitle, base.home?.promos?.[index]?.subtitle),
+  }));
+
+  const sectionsSource = Array.isArray(merged.home.sections) ? merged.home.sections : base.home?.sections ?? [];
+  merged.home.sections = sectionsSource.map((section: any, index: number) => ({
+    ...section,
+    id: section.id ?? section.type ?? `section-${index}`,
+    enabled: section.enabled ?? true,
+    order: typeof section.order === "number" ? section.order : index,
+    title: section.title ? normalizeLocalized(section.title) : section.title ?? undefined,
+    subtitle: section.subtitle ? normalizeLocalized(section.subtitle) : section.subtitle ?? undefined,
+  }));
+
+  merged.content = merged.content ?? {};
+  merged.content.support = merged.content.support ?? {};
+  merged.content.support.serviceArea = normalizeLocalized(merged.content.support.serviceArea, base.content?.support?.serviceArea);
+  merged.content.support.workingHours = normalizeLocalized(merged.content.support.workingHours, base.content?.support?.workingHours);
+  merged.content.support.cityCoverage = normalizeLocalized(merged.content.support.cityCoverage, base.content?.support?.cityCoverage);
+
+  merged.features = {
+    guestCheckout:
+      typeof merged.features?.guestCheckout === "boolean" ? merged.features.guestCheckout : base.features?.guestCheckout ?? true,
+    coupons: typeof merged.features?.coupons === "boolean" ? merged.features.coupons : base.features?.coupons ?? true,
+    loyalty: typeof merged.features?.loyalty === "boolean" ? merged.features.loyalty : base.features?.loyalty ?? true,
+  };
+
+  return merged;
+};
+
 export function SettingsManagement({ initialSection }: SettingsManagementProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -206,6 +304,10 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
     return initialSection || "general";
   });
   const mobileAppTemplateJson = React.useMemo(() => JSON.stringify(mobileAppTemplate, null, 2), []);
+  const [mobileAppEditorMode, setMobileAppEditorMode] = React.useState<"builder" | "json">("builder");
+  const [mobileAppDraft, setMobileAppDraft] = React.useState<MobileAppConfig>(() => normalizeMobileAppConfig(null));
+  const [mobileAppJson, setMobileAppJson] = React.useState(mobileAppTemplateJson);
+  const [mobileAppJsonError, setMobileAppJsonError] = React.useState<string | null>(null);
 
   const generalForm = useForm<GeneralFormValues>({
     resolver: zodResolver(generalSchema) as Resolver<GeneralFormValues>,
@@ -286,12 +388,6 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
     },
   });
 
-  const mobileAppForm = useForm<MobileAppFormValues>({
-    resolver: zodResolver(mobileAppSchema) as Resolver<MobileAppFormValues>,
-    defaultValues: {
-      configJson: "",
-    },
-  });
 
   useEffect(() => {
     if (settingsQuery.data?.general) {
@@ -383,11 +479,19 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
   }, [settingsQuery.data?.loyalty, loyaltyForm]);
 
   useEffect(() => {
-    const raw = settingsQuery.data?.mobileApp ?? null;
+    const raw = settingsQuery.data?.mobileApp;
     if (raw === undefined) return;
-    const json = raw ? JSON.stringify(raw, null, 2) : "";
-    mobileAppForm.reset({ configJson: json });
-  }, [settingsQuery.data?.mobileApp, mobileAppForm]);
+    const normalized = normalizeMobileAppConfig(raw);
+    setMobileAppDraft(normalized);
+    setMobileAppJson(JSON.stringify(normalized, null, 2));
+    setMobileAppJsonError(null);
+  }, [settingsQuery.data?.mobileApp]);
+
+  useEffect(() => {
+    if (mobileAppEditorMode !== "builder") return;
+    setMobileAppJson(JSON.stringify(mobileAppDraft, null, 2));
+    setMobileAppJsonError(null);
+  }, [mobileAppDraft, mobileAppEditorMode]);
 
   const handleGeneralSave = generalForm.handleSubmit(async (values) => {
     try {
@@ -499,26 +603,50 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
     }
   });
 
-  const handleMobileAppSave = mobileAppForm.handleSubmit(async (values) => {
-    const raw = values.configJson?.trim() ?? "";
-    if (!raw) {
-      try {
-        await mobileAppMutation.mutateAsync(null);
-        toast.success(t("settings.saved", "Settings updated"));
-      } catch (error) {
-        toast.error(getAdminErrorMessage(error, t));
-      }
-      return;
-    }
-
+  const handleMobileAppSave = async () => {
     try {
-      const parsed = JSON.parse(raw);
-      await mobileAppMutation.mutateAsync(parsed);
+      await mobileAppMutation.mutateAsync(mobileAppDraft);
       toast.success(t("settings.saved", "Settings updated"));
     } catch (error) {
-      toast.error(t("settings.mobileAppInvalid", "Mobile app config must be valid JSON."));
+      toast.error(getAdminErrorMessage(error, t));
     }
-  });
+  };
+
+  const handleMobileAppReset = () => {
+    const normalized = normalizeMobileAppConfig(mobileAppTemplate);
+    setMobileAppDraft(normalized);
+    setMobileAppJson(JSON.stringify(normalized, null, 2));
+    setMobileAppJsonError(null);
+  };
+
+  const handleMobileAppApplyJson = () => {
+    const raw = mobileAppJson.trim();
+    if (!raw) {
+      const normalized = normalizeMobileAppConfig(mobileAppTemplate);
+      setMobileAppDraft(normalized);
+      setMobileAppJson(JSON.stringify(normalized, null, 2));
+      setMobileAppJsonError(null);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      const normalized = normalizeMobileAppConfig(parsed);
+      setMobileAppDraft(normalized);
+      setMobileAppJson(JSON.stringify(normalized, null, 2));
+      setMobileAppJsonError(null);
+    } catch (error) {
+      setMobileAppJsonError(t("settings.mobileAppInvalid", "Mobile app config must be valid JSON."));
+    }
+  };
+
+  const handleMobileAppEditorChange = (value: string) => {
+    const nextValue = value === "json" ? "json" : "builder";
+    setMobileAppEditorMode(nextValue);
+    if (nextValue === "json") {
+      setMobileAppJson(JSON.stringify(mobileAppDraft, null, 2));
+      setMobileAppJsonError(null);
+    }
+  };
 
   if (settingsQuery.isLoading) {
     return (
@@ -968,44 +1096,68 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
             <CardHeader>
               <CardTitle>{t("settings.mobileApp", "Mobile App")}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <form className="space-y-4" onSubmit={handleMobileAppSave}>
-                <div className="space-y-2">
-                  <Label>{t("settings.mobileAppConfig", "Mobile app configuration (JSON)")}</Label>
-                  <Textarea
-                    rows={18}
-                    className="font-mono text-xs"
-                    placeholder={mobileAppTemplateJson}
-                    {...mobileAppForm.register("configJson")}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {t(
-                      "settings.mobileAppHint",
-                      "Use JSON to control branding, theme, navigation, and home sections."
-                    )}
-                  </p>
-                </div>
+            <CardContent className="space-y-6">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {t("settings.mobileAppEditorHint", "Use the builder to control the mobile experience and preview changes live.")}
+                </p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      mobileAppForm.setValue("configJson", mobileAppTemplateJson, { shouldDirty: true })
-                    }
-                  >
-                    {t("settings.mobileAppLoadTemplate", "Load template")}
+                  <Button type="button" variant="outline" onClick={handleMobileAppReset}>
+                    {t("settings.mobileAppResetTemplate", "Reset to template")}
                   </Button>
-                  <Button type="submit" disabled={mobileAppMutation.isPending}>
+                  <Button type="button" onClick={handleMobileAppSave} disabled={mobileAppMutation.isPending}>
                     {mobileAppMutation.isPending ? t("common.saving", "Saving...") : t("common.save", "Save")}
                   </Button>
                 </div>
-                <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
-                  <p className="font-semibold text-foreground mb-2">
-                    {t("settings.mobileAppTemplateTitle", "Template preview")}
-                  </p>
-                  <pre className="whitespace-pre-wrap break-words">{mobileAppTemplateJson}</pre>
-                </div>
-              </form>
+              </div>
+
+              <Tabs value={mobileAppEditorMode} onValueChange={handleMobileAppEditorChange} className="w-full">
+                <TabsList className="flex flex-wrap">
+                  <TabsTrigger value="builder">{t("settings.mobileAppBuilderTab", "Builder")}</TabsTrigger>
+                  <TabsTrigger value="json">{t("settings.mobileAppJsonTab", "JSON")}</TabsTrigger>
+                </TabsList>
+                <TabsContent value="builder" className="mt-4">
+                  <MobileAppBuilder value={mobileAppDraft} onChange={setMobileAppDraft} />
+                </TabsContent>
+                <TabsContent value="json" className="mt-4">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>{t("settings.mobileAppConfig", "Mobile app configuration (JSON)")}</Label>
+                      <Textarea
+                        rows={18}
+                        className="font-mono text-xs"
+                        placeholder={mobileAppTemplateJson}
+                        value={mobileAppJson}
+                        onChange={(event) => setMobileAppJson(event.target.value)}
+                      />
+                      {mobileAppJsonError && <p className="text-xs text-red-600">{mobileAppJsonError}</p>}
+                      <p className="text-xs text-muted-foreground">
+                        {t(
+                          "settings.mobileAppHint",
+                          "Use JSON to control branding, theme, navigation, and home sections."
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="button" variant="outline" onClick={() => setMobileAppJson(mobileAppTemplateJson)}>
+                        {t("settings.mobileAppLoadTemplate", "Load template")}
+                      </Button>
+                      <Button type="button" variant="outline" onClick={handleMobileAppApplyJson}>
+                        {t("settings.mobileAppApplyJson", "Apply JSON")}
+                      </Button>
+                      <Button type="button" onClick={handleMobileAppSave} disabled={mobileAppMutation.isPending}>
+                        {mobileAppMutation.isPending ? t("common.saving", "Saving...") : t("common.save", "Save")}
+                      </Button>
+                    </div>
+                    <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+                      <p className="font-semibold text-foreground mb-2">
+                        {t("settings.mobileAppTemplateTitle", "Template preview")}
+                      </p>
+                      <pre className="whitespace-pre-wrap break-words">{mobileAppTemplateJson}</pre>
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </TabsContent>
