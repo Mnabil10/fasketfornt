@@ -393,6 +393,19 @@ export async function getOrderTransitions(id: string) {
   }));
 }
 
+export async function getOrderDriverLocation(orderId: string) {
+  const { data } = await api.get<{
+    driverId: string;
+    lat: number;
+    lng: number;
+    accuracy?: number | null;
+    heading?: number | null;
+    speed?: number | null;
+    recordedAt: string;
+  } | null>(`/api/v1/admin/orders/${orderId}/driver-location`);
+  return data;
+}
+
 export async function lookupOrder(params: { code?: string; phone?: string }) {
   const query = buildQueryParams(params);
   const { data } = await api.get<OrderDto | null>("/api/v1/admin/orders/lookup", { params: query });

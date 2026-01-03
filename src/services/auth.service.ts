@@ -7,6 +7,20 @@ export type LoginResponse = {
   user: { id: string; name: string; role: string; phone?: string; email?: string };
 };
 
+export type ProviderRegisterPayload = {
+  name: string;
+  phone: string;
+  email?: string;
+  password: string;
+  providerName: string;
+  providerNameAr?: string;
+  providerType?: string;
+  branchName?: string;
+  branchAddress?: string;
+  branchCity?: string;
+  branchRegion?: string;
+};
+
 function resolveUserAgent() {
   if (typeof navigator === "undefined") return "admin-web";
   return navigator.userAgent || "admin-web";
@@ -28,6 +42,14 @@ export async function adminLogin(identifier: string, password: string, otp?: str
   if (!data?.accessToken) throw new Error("Login failed");
   setAccessToken(data.accessToken);
   if (data.refreshToken) setRefreshToken(data.refreshToken);
+  return data;
+}
+
+export async function registerProvider(payload: ProviderRegisterPayload) {
+  const { data } = await api.post<{ ok: boolean; providerId?: string; providerStatus?: string }>(
+    "/api/v1/auth/provider/register",
+    payload
+  );
   return data;
 }
 

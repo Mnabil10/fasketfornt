@@ -18,6 +18,7 @@ type AuthContextValue = {
   isStaff: boolean;
   isOps: boolean;
   isFinance: boolean;
+  isProvider: boolean;
   signIn: (payload: { accessToken: string; refreshToken?: string; user: NonNullable<User> }) => void;
   signOut: () => void;
 };
@@ -111,9 +112,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isStaff = role === "STAFF";
   const isOps = role === "OPS_MANAGER";
   const isFinance = role === "FINANCE";
+  const isProvider = role === "PROVIDER";
   const value = useMemo(
-    () => ({ user, token, refreshToken, isAuthed: !!token, isAdmin, isStaff, isOps, isFinance, signIn, signOut }),
-    [user, token, refreshToken, isAdmin, isStaff, isOps, isFinance]
+    () => ({
+      user,
+      token,
+      refreshToken,
+      isAuthed: !!token,
+      isAdmin,
+      isStaff,
+      isOps,
+      isFinance,
+      isProvider,
+      signIn,
+      signOut,
+    }),
+    [user, token, refreshToken, isAdmin, isStaff, isOps, isFinance, isProvider]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

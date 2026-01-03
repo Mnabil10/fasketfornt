@@ -35,6 +35,7 @@ import {
   Store,
   MapPin,
   CreditCard,
+  Megaphone,
 } from "lucide-react";
 const DashboardOverview = React.lazy(() =>
   import("./screens/DashboardOverview").then((m) => ({ default: m.DashboardOverview }))
@@ -57,6 +58,8 @@ import { SupportQueriesPage } from "./screens/SupportQueriesPage";
 import { ProvidersManagement } from "./screens/ProvidersManagement";
 import { BranchesManagement } from "./screens/BranchesManagement";
 import { BillingManagement } from "./screens/BillingManagement";
+import { CampaignsManagement } from "./screens/CampaignsManagement";
+import { ProviderAccount } from "./screens/ProviderAccount";
 import { useTranslation } from "react-i18next";
 import BrandLogo from "../common/BrandLogo";
 import { fetchDashboard, type DashboardSummary } from "../../services/dashboard.service";
@@ -79,11 +82,13 @@ export type AdminScreen =
   | "customers"
   | "coupons"
   | "billing"
+  | "campaigns"
   | "settings"
   | "delivery-drivers"
   | "automation-outbox"
   | "reports"
-  | "support";
+  | "support"
+  | "provider-account";
 
 export interface AdminState {
   currentScreen: AdminScreen;
@@ -100,16 +105,22 @@ export type ScreenProps = {
 
 export function AdminDashboard() {
   const { t, i18n } = useTranslation();
-  const { user, isAdmin, signOut } = useAuth();
+  const { user, isAdmin, isProvider, signOut } = useAuth();
   const perms = usePermissions();
   useDirection();
   const location = useLocation();
   const navigate = useNavigate();
-  const defaultScreen: AdminScreen = isAdmin ? "dashboard" : perms.canViewProfit ? "reports" : "products";
+  const defaultScreen: AdminScreen = isAdmin
+    ? "dashboard"
+    : isProvider
+      ? "orders"
+      : perms.canViewProfit
+        ? "reports"
+        : "products";
   const pathSegments = useMemo(() => location.pathname.replace(/^\/+/, "").split("/").filter(Boolean), [location.pathname]);
   const derivedScreen: AdminScreen =
     (pathSegments[0] as AdminScreen | undefined) &&
-    (["dashboard", "providers", "branches", "categories", "products", "hot-offers", "orders", "customers", "coupons", "billing", "settings", "delivery-drivers", "automation-outbox", "reports", "support"] as const).includes(
+    (["dashboard", "providers", "branches", "categories", "products", "hot-offers", "orders", "customers", "coupons", "billing", "campaigns", "settings", "delivery-drivers", "automation-outbox", "reports", "support", "provider-account"] as const).includes(
       pathSegments[0] as AdminScreen
     )
       ? (pathSegments[0] as AdminScreen)
@@ -137,13 +148,24 @@ export function AdminDashboard() {
   const role = (user?.role || "").toUpperCase();
   const accessibleScreens = useMemo<AdminScreen[]>(() => {
     const base: AdminScreen[] = ["categories", "products", "hot-offers", "orders"];
-    const adminExtras: AdminScreen[] = ["dashboard", "providers", "branches", "customers", "billing", "coupons", "settings", "delivery-drivers"];
+    const adminExtras: AdminScreen[] = [
+      "dashboard",
+      "providers",
+      "branches",
+      "customers",
+      "billing",
+      "coupons",
+      "campaigns",
+      "settings",
+      "delivery-drivers",
+    ];
     const automationScreens: AdminScreen[] = perms.canViewAutomation ? ["automation-outbox"] : [];
     const profitScreens: AdminScreen[] = perms.canViewProfit ? ["reports"] : [];
     const supportScreens: AdminScreen[] = perms.canViewSupport ? ["support"] : [];
     if (role === "ADMIN") return [...base, ...adminExtras, ...automationScreens, ...profitScreens, ...supportScreens];
     if (role === "OPS_MANAGER") return [...base, "dashboard", ...automationScreens, ...supportScreens];
     if (role === "FINANCE") return ["dashboard", ...profitScreens];
+    if (role === "PROVIDER") return [...base, "provider-account"];
     return [...base, ...automationScreens, ...profitScreens, ...supportScreens];
   }, [role, perms.canViewAutomation, perms.canViewProfit, perms.canViewSupport]);
 
@@ -249,10 +271,12 @@ export function AdminDashboard() {
       { id: "customers" as const, icon: Users, badge: customersCount },
       { id: "billing" as const, icon: CreditCard, badge: null },
       { id: "coupons" as const, icon: Ticket, badge: null },
+      { id: "campaigns" as const, icon: Megaphone, badge: null },
       { id: "settings" as const, icon: Settings, badge: null },
       { id: "automation-outbox" as const, icon: Bell, badge: null },
       { id: "reports" as const, icon: LayoutDashboard, badge: null },
       { id: "support" as const, icon: User, badge: null },
+      { id: "provider-account" as const, icon: User, badge: null },
     ] as Array<{ id: AdminScreen; icon: any; badge: number | null }>;
     return all.filter((item) => accessibleScreens.includes(item.id));
   }, [summary, accessibleScreens]);
@@ -268,11 +292,13 @@ export function AdminDashboard() {
     customers: "Customers",
     coupons: "Coupons",
     billing: "Billing",
+    campaigns: "Campaigns",
     settings: "Settings",
     "delivery-drivers": "Delivery Drivers",
     "automation-outbox": "Automation Outbox",
     reports: "Profit Reports",
     support: "Support",
+    "provider-account": "Account",
   };
 
   const labelFor = (id: AdminScreen) => t(`menu.${id}`, { defaultValue: defaultLabels[id] });
@@ -381,6 +407,9 @@ export function AdminDashboard() {
             </React.Suspense>
           );
         }
+        if (isProvider) {
+          return <ProductsManagement {...p} />;
+        }
         return <FasketProducts />;
       case "hot-offers":
         return <HotOffersList {...p} />;
@@ -390,6 +419,8 @@ export function AdminDashboard() {
         return <CustomersManagement />;
       case "billing":
         return <BillingManagement />;
+      case "campaigns":
+        return <CampaignsManagement />;
       case "coupons":
         return <CouponsManagement {...p} />;
       case "settings":
@@ -414,6 +445,8 @@ export function AdminDashboard() {
             <SupportQueriesPage />
           </RequireCapability>
         );
+      case "provider-account":
+        return <ProviderAccount />;
       default:
         return <DashboardOverview {...p} />;
     }
@@ -461,74 +494,78 @@ export function AdminDashboard() {
                 } lg:gap-4 md:justify-end`}
               >
                 {/* Search */}
-                <div className="relative hidden md:block">
-                  <Search
-                    className={`absolute ${
-                      i18n.language === "ar" ? "right-3" : "left-3"
-                    } top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4`}
-                  />
-                  <Input
-                    placeholder={t("common.search_placeholder") as string}
-                    value={lookupTerm}
-                    onChange={(e) => setLookupTerm(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && lookupTerm.trim()) {
-                        lookupMutation.mutate(lookupTerm.trim());
-                      }
-                    }}
-                    className={`pl-10 w-48 lg:w-64 h-10 bg-[var(--input-background)] border-border rounded-lg ${
-                      i18n.language === "ar" ? "pr-10 pl-3 text-right" : ""
-                    }`}
-                  />
-                </div>
+                {!isProvider && (
+                  <div className="relative hidden md:block">
+                    <Search
+                      className={`absolute ${
+                        i18n.language === "ar" ? "right-3" : "left-3"
+                      } top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4`}
+                    />
+                    <Input
+                      placeholder={t("common.search_placeholder") as string}
+                      value={lookupTerm}
+                      onChange={(e) => setLookupTerm(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && lookupTerm.trim()) {
+                          lookupMutation.mutate(lookupTerm.trim());
+                        }
+                      }}
+                      className={`pl-10 w-48 lg:w-64 h-10 bg-[var(--input-background)] border-border rounded-lg ${
+                        i18n.language === "ar" ? "pr-10 pl-3 text-right" : ""
+                      }`}
+                    />
+                  </div>
+                )}
 
                 {/* Language */}
                 <LanguageSwitch />
 
                 {/* Notifications */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="relative p-2">
-                      <Bell className="w-5 h-5" />
-                      <Badge className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center text-xs bg-primary text-primary-foreground">
-                        {notifications.length}
-                      </Badge>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-80">
-                    <div className="p-3 border-b border-border">
-                      <h3 className="font-medium">{t("settings.notifications")}</h3>
-                    </div>
-                    {notifications.map((n) => {
-                      const toScreen: AdminScreen = n.type === "order" ? "orders" : n.type === "stock" ? "products" : "dashboard";
-                      return (
-                        <DropdownMenuItem
-                          key={n.id}
-                          className="p-3 border-b last:border-b-0 border-border cursor-pointer"
-                          onClick={() => {
-                            if (toScreen === "orders" && (n as any).payload?.orderId) {
-                              const orderId = (n as any).payload?.orderId;
-                              if (orderId) {
-                                navigate(`/orders/${orderId}`);
-                                updateAdminState({ currentScreen: "orders", selectedOrder: orderId });
+                {!isProvider && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="relative p-2">
+                        <Bell className="w-5 h-5" />
+                        <Badge className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center text-xs bg-primary text-primary-foreground">
+                          {notifications.length}
+                        </Badge>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-80">
+                      <div className="p-3 border-b border-border">
+                        <h3 className="font-medium">{t("settings.notifications")}</h3>
+                      </div>
+                      {notifications.map((n) => {
+                        const toScreen: AdminScreen = n.type === "order" ? "orders" : n.type === "stock" ? "products" : "dashboard";
+                        return (
+                          <DropdownMenuItem
+                            key={n.id}
+                            className="p-3 border-b last:border-b-0 border-border cursor-pointer"
+                            onClick={() => {
+                              if (toScreen === "orders" && (n as any).payload?.orderId) {
+                                const orderId = (n as any).payload?.orderId;
+                                if (orderId) {
+                                  navigate(`/orders/${orderId}`);
+                                  updateAdminState({ currentScreen: "orders", selectedOrder: orderId });
+                                }
+                              } else if (toScreen === "products" && (n as any).payload?.productId) {
+                                updateAdminState({ currentScreen: "products", selectedProduct: (n as any).payload.productId });
+                              } else {
+                                handleMenuItemClick(toScreen);
                               }
-                            } else if (toScreen === "products" && (n as any).payload?.productId) {
-                              updateAdminState({ currentScreen: "products", selectedProduct: (n as any).payload.productId });
-                            } else {
-                              handleMenuItemClick(toScreen);
-                            }
-                          }}
-                        >
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">{n.title}</p>
-                            <p className="text-sm text-muted-foreground">{n.message}</p>
-                            <p className="text-xs text-muted-foreground mt-1">{n.time}</p>
-                          </div>
-                        </DropdownMenuItem>
-                      );
-                    })}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                            }}
+                          >
+                            <div className="flex-1">
+                              <p className="font-medium text-sm">{n.title}</p>
+                              <p className="text-sm text-muted-foreground">{n.message}</p>
+                              <p className="text-xs text-muted-foreground mt-1">{n.time}</p>
+                            </div>
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
 
                 {/* User */}
                 <DropdownMenu>

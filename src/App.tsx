@@ -4,6 +4,7 @@ import "./i18n";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthProvider";
 import SignIn from "./components/auth/SignIn";
+import ProviderSignUp from "./components/auth/ProviderSignUp";
 import Forbidden from "./components/auth/Forbidden";
 import { AdminDashboard } from "./components/admin/AdminDashboard";
 import RequireAdmin from "./auth/RequireAuth";
@@ -21,6 +22,7 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path={LOGIN_PATH} element={<SignIn />} />
+          <Route path="/provider-signup" element={<ProviderSignUp />} />
           <Route path="/signin" element={<Navigate to={LOGIN_PATH} replace />} />
           <Route path="/forbidden" element={<Forbidden />} />
           <Route

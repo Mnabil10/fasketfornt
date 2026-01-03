@@ -71,6 +71,7 @@ import { useAuth } from "../../../auth/AuthProvider";
 import { useDebounce } from "../../../hooks/useDebounce";
 import { useProductsAdmin, PRODUCTS_QUERY_KEY } from "../../../hooks/api/useProductsAdmin";
 import { useCategoriesAdmin } from "../../../hooks/api/useCategoriesAdmin";
+import { useProviders } from "../../../hooks/api/useProviders";
 import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
 import { EmptyState } from "../../admin/common/EmptyState";
 import { ErrorState } from "../../admin/common/ErrorState";
@@ -100,6 +101,7 @@ const productFormSchema = z
     isHotOffer: z.boolean().default(false),
     images: z.array(z.string().min(1)).default([]),
     mainImage: z.string().optional(),
+    providerId: z.string().optional(),
   })
   .superRefine((val, ctx) => {
     const priceValue = parseCurrency(val.price);
@@ -131,6 +133,7 @@ type SortField = "createdAt" | "priceCents" | "name";
 type FilterState = {
   status: StatusFilter;
   categoryId: string;
+  providerId: string;
   stock: StockFilter;
   onlyHot: boolean;
   minPrice?: number;
@@ -144,6 +147,7 @@ type FilterState = {
 const defaultFilters: FilterState = {
   status: "all",
   categoryId: "all",
+  providerId: "all",
   stock: "all",
   onlyHot: false,
   page: 1,
@@ -226,6 +230,7 @@ function mapProductToForm(product?: Product): ProductFormValues {
       isHotOffer: false,
       images: [],
       mainImage: "",
+      providerId: "",
     };
   }
   return {
@@ -242,6 +247,7 @@ function mapProductToForm(product?: Product): ProductFormValues {
     isHotOffer: !!product.isHotOffer,
     images: product.images?.filter(Boolean) || [],
     mainImage: product.imageUrl || product.images?.[0] || "",
+    providerId: product.providerId || "",
   };
 }
 
@@ -297,12 +303,14 @@ function buildFilterChips(
   t: ReturnType<typeof useTranslation>["t"],
   filters: FilterState,
   search: string,
-  categoryLabel?: string
+  categoryLabel?: string,
+  providerLabel?: string
 ) {
   const chips: Array<{ label: string; onClear?: () => void }> = [];
   if (search.trim()) chips.push({ label: `${t("common.search")}: ${search.trim()}` });
   if (filters.status !== "all") chips.push({ label: t(`products.statuses.${filters.status}`) });
   if (filters.categoryId !== "all") chips.push({ label: categoryLabel || t("products.category_selected") });
+  if (filters.providerId !== "all") chips.push({ label: providerLabel || t("providers.title", "Provider") });
   if (filters.stock !== "all") chips.push({ label: t(`products.stockFilters.${filters.stock}`) });
   if (filters.onlyHot) chips.push({ label: t("products.hotOffer") });
   if (filters.minPrice) chips.push({ label: `${t("products.minPrice")}: ${filters.minPrice}` });
@@ -329,7 +337,8 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
   const { t, i18n } = useTranslation();
   const isRTL = i18n.dir() === "rtl";
   const isArabic = i18n.language?.startsWith("ar");
-  const { isAdmin } = useAuth();
+  const { isAdmin, isProvider } = useAuth();
+  const canManageProducts = isAdmin || isProvider;
   const queryClient = useQueryClient();
 
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
@@ -338,13 +347,29 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
   const [drawerState, setDrawerState] = useState<DrawerState>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
 
-  const categoriesQuery = useCategoriesAdmin({ pageSize: 100 }, { enabled: true });
+  const categoriesQuery = useCategoriesAdmin(
+    {
+      pageSize: 100,
+      providerId: isAdmin && filters.providerId !== "all" ? filters.providerId : undefined,
+    },
+    { enabled: true }
+  );
+  const providersQuery = useProviders({ page: 1, pageSize: 200 }, { enabled: isAdmin });
+  const providers = providersQuery.data?.items ?? [];
+  const providerLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    providers.forEach((provider) => {
+      map.set(provider.id, isArabic && provider.nameAr ? provider.nameAr : provider.name);
+    });
+    return map;
+  }, [providers, isArabic]);
 
   const apiFilters = useMemo(() => {
     const q = debouncedSearch.trim();
     return {
       q: q || undefined,
       categoryId: filters.categoryId !== "all" ? filters.categoryId : undefined,
+      providerId: isAdmin && filters.providerId !== "all" ? filters.providerId : undefined,
       status: filters.status !== "all" ? (filters.status as Product["status"]) : undefined,
       minPriceCents: filters.minPrice ? toCents(filters.minPrice) : undefined,
       maxPriceCents: filters.maxPrice ? toCents(filters.maxPrice) : undefined,
@@ -362,7 +387,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
       page: filters.page,
       pageSize: filters.pageSize,
     };
-  }, [filters, debouncedSearch]);
+  }, [filters, debouncedSearch, isAdmin]);
 
   const productsQuery = useProductsAdmin(apiFilters);
 
@@ -412,6 +437,10 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
       }
       if (!Number.isFinite(stockValue) || stockValue < 0) throw new Error(t("products.invalid_stock", "Invalid stock"));
 
+      if (isAdmin && !payload.values.providerId && !payload.id) {
+        throw new Error(t("providers.selectProvider", "Select provider"));
+      }
+
       const basePayload: Partial<Product> = {
         name: payload.values.name.trim(),
         nameAr: payload.values.nameAr?.trim() || undefined,
@@ -426,9 +455,17 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
         salePriceCents: payload.values.salePrice ? toCents(saleValue) : undefined,
         imageUrl: payload.values.mainImage || payload.values.images[0] || undefined,
         images: payload.values.images.filter(Boolean),
+        providerId: payload.values.providerId || undefined,
       };
 
-      if (!isAdmin) {
+      const canCreateProduct = isAdmin || isProvider;
+      const canEditPricing = isAdmin || isProvider;
+
+      if (!canCreateProduct && !payload.id) {
+        throw new Error(t("products.permissions.adminOnly", "Only admins can create products or change prices"));
+      }
+
+      if (!canEditPricing) {
         if (!payload.id || !payload.product) {
           throw new Error(t("products.permissions.adminOnly", "Only admins can create products or change prices"));
         }
@@ -513,7 +550,8 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
     t,
     filters,
     searchInput,
-    filters.categoryId !== "all" ? categoryLookup.get(filters.categoryId) : undefined
+    filters.categoryId !== "all" ? categoryLookup.get(filters.categoryId) : undefined,
+    filters.providerId !== "all" ? providerLookup.get(filters.providerId) : undefined
   );
   const primaryAlignClass = isRTL ? "text-right" : "";
   const endAlignClass = isRTL ? "text-left" : "text-right";
@@ -528,7 +566,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
             {t("products.subtitle", "Manage inventory, prices, and availability")}
           </p>
         </div>
-        {isAdmin && (
+        {canManageProducts && (
           <div className="flex flex-col sm:flex-row gap-3">
             <Button variant="outline" className="gap-2" onClick={() => setBulkOpen(true)}>
               <Upload className="w-4 h-4" />
@@ -580,6 +618,24 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
                   ))}
                 </SelectContent>
               </Select>
+              {isAdmin && (
+                <Select
+                  value={filters.providerId}
+                  onValueChange={(value) => setFilters((prev) => ({ ...prev, providerId: value, page: 1, categoryId: "all" }))}
+                >
+                  <SelectTrigger className="w-full sm:w-44">
+                    <SelectValue placeholder={t("providers.title", "Provider")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("common.all")}</SelectItem>
+                    {providers.map((provider) => (
+                      <SelectItem key={provider.id} value={provider.id}>
+                        {isArabic && provider.nameAr ? provider.nameAr : provider.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Select
                 value={filters.categoryId}
                 onValueChange={(value) => setFilters((prev) => ({ ...prev, categoryId: value, page: 1 }))}
@@ -943,9 +999,12 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
           <ProductForm
             key={drawerState?.product?.id || drawerState?.mode}
             categories={categoriesQuery.data?.items || []}
+            providers={providers}
+            showProviderSelect={isAdmin}
+            providerDefaultId={isAdmin && filters.providerId !== "all" ? filters.providerId : undefined}
             initialValues={mapProductToForm(drawerState?.product)}
             loading={upsertMutation.isPending}
-            canEditPrice={isAdmin}
+            canEditPrice={isAdmin || isProvider}
             onCancel={() => setDrawerState(null)}
             onSubmit={(values, imageFile) =>
               upsertMutation.mutate({ id: drawerState?.product?.id, values, imageFile, product: drawerState?.product })
@@ -954,7 +1013,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
         </DialogContent>
       </Dialog>
 
-      {isAdmin && (
+      {canManageProducts && (
         <BulkUploadDrawer
           open={bulkOpen}
           onOpenChange={(open) => setBulkOpen(open)}
@@ -989,6 +1048,9 @@ function StatCard({ icon: Icon, label, value, accent }: StatCardProps) {
 
 type ProductFormProps = {
   categories: Category[];
+  providers: Array<{ id: string; name: string; nameAr?: string | null }>;
+  showProviderSelect: boolean;
+  providerDefaultId?: string;
   initialValues: ProductFormValues;
   loading: boolean;
   canEditPrice: boolean;
@@ -996,7 +1058,17 @@ type ProductFormProps = {
   onCancel: () => void;
 };
 
-function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmit, onCancel }: ProductFormProps) {
+function ProductForm({
+  categories,
+  providers,
+  showProviderSelect,
+  providerDefaultId,
+  initialValues,
+  loading,
+  canEditPrice,
+  onSubmit,
+  onCancel,
+}: ProductFormProps) {
   const { t } = useTranslation();
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productFormSchema) as Resolver<ProductFormValues>,
@@ -1015,7 +1087,10 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
     form.reset(initialValues);
     setImageFile(null);
     slugEdited.current = false;
-  }, [initialValues, form]);
+    if (showProviderSelect && providerDefaultId && !initialValues.providerId) {
+      form.setValue("providerId", providerDefaultId);
+    }
+  }, [initialValues, form, providerDefaultId, showProviderSelect]);
 
   useEffect(() => {
     if (!imageFile) {
@@ -1036,6 +1111,10 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
   }, [nameValue, form]);
 
   const discount = calcDiscount(form.watch("price"), saleValue || "");
+  const selectedProviderId = form.watch("providerId");
+  const visibleCategories = showProviderSelect && selectedProviderId
+    ? categories.filter((category) => category.providerId === selectedProviderId)
+    : categories;
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1082,6 +1161,26 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
             />
             {renderError(form.formState.errors.slug as FieldError)}
           </div>
+          {showProviderSelect && (
+            <div>
+              <Label>
+                {t("providers.title", "Provider")} {requiredMark}
+              </Label>
+              <Select value={form.watch("providerId") || ""} onValueChange={(value) => form.setValue("providerId", value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t("providers.selectProvider", "Select provider")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((provider) => (
+                    <SelectItem key={provider.id} value={provider.id}>
+                      {provider.nameAr || provider.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {renderError(form.formState.errors.providerId as FieldError)}
+            </div>
+          )}
           <div>
             <Label>
               {t("products.category")} {requiredMark}
@@ -1091,7 +1190,7 @@ function ProductForm({ categories, initialValues, loading, canEditPrice, onSubmi
                 <SelectValue placeholder={t("products.category")} />
               </SelectTrigger>
               <SelectContent>
-                {categories.map((category) => (
+                {visibleCategories.map((category) => (
                   <SelectItem key={category.id} value={category.id}>
                     {category.name}
                   </SelectItem>

@@ -10,6 +10,9 @@ export type DashboardSummary = {
   topCategories?: Array<{ categoryId: string; name: string; orders: number; revenueCents?: number }>;
   lowStock: Array<{ id: string; name: string; stock: number }>;
   customersCount: number;
+  activeOrders?: number;
+  activeDrivers?: number;
+  outForDelivery?: number;
 };
 
 export async function fetchDashboard(params?: { from?: string; to?: string }) {

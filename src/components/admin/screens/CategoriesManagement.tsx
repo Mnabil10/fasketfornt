@@ -24,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../ui/select";
 import {
   Table,
   TableBody,
@@ -50,6 +51,7 @@ import { toast } from "sonner";
 import { useAuth } from "../../../auth/AuthProvider";
 import { useDebounce } from "../../../hooks/useDebounce";
 import { useCategoriesAdmin, CATEGORIES_QUERY_KEY } from "../../../hooks/api/useCategoriesAdmin";
+import { useProviders } from "../../../hooks/api/useProviders";
 import { getAdminErrorMessage } from "../../../lib/errors";
 import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
 import { EmptyState } from "../../admin/common/EmptyState";
@@ -72,6 +74,7 @@ const categoryFormSchema = z.object({
     .optional()
     .transform((value) => (typeof value === "boolean" ? value : true)),
   imageUrl: z.string().optional(),
+  providerId: z.string().optional(),
 });
 
 type CategoryFormValues = z.infer<typeof categoryFormSchema>;
@@ -86,6 +89,9 @@ type CategoryFormDialogProps = {
   mode: "create" | "edit";
   category?: Category;
   parents: Category[];
+  providers: Array<{ id: string; name: string; nameAr?: string | null }>;
+  showProviderSelect: boolean;
+  providerDefaultId?: string;
   loading: boolean;
   onSubmit: (values: CategoryFormValues, imageFile: File | null) => void;
 };
@@ -116,6 +122,7 @@ function mapCategoryToForm(category?: Category): CategoryFormValues {
       sortOrder: "0",
       isActive: true,
       imageUrl: "",
+      providerId: "",
     };
   }
   return {
@@ -126,6 +133,7 @@ function mapCategoryToForm(category?: Category): CategoryFormValues {
     sortOrder: String(category.sortOrder ?? 0),
     isActive: !!category.isActive,
     imageUrl: category.imageUrl || "",
+    providerId: category.providerId || "",
   };
 }
 
@@ -136,6 +144,7 @@ export function CategoriesManagement() {
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebounce(searchInput, 300);
   const [page, setPage] = useState(1);
+  const [providerFilter, setProviderFilter] = useState("all");
   const [dialogState, setDialogState] = useState<DialogState>(null);
   const [rows, setRows] = useState<Category[]>([]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -143,11 +152,14 @@ export function CategoriesManagement() {
   const categoriesQuery = useCategoriesAdmin(
     {
       q: debouncedSearch.trim() || undefined,
+      providerId: isAdmin && providerFilter !== "all" ? providerFilter : undefined,
       page,
       pageSize: PAGE_SIZE,
     },
     { enabled: true }
   );
+  const providersQuery = useProviders({ page: 1, pageSize: 200 }, { enabled: isAdmin });
+  const providers = providersQuery.data?.items ?? [];
 
   const categoryData = categoriesQuery.data;
   const categoryItems: Category[] = categoryData?.items ?? [];
@@ -182,6 +194,9 @@ export function CategoriesManagement() {
         const { url } = await uploadAdminFile(imageFile);
         imageUrl = url;
       }
+      if (isAdmin && !values.providerId) {
+        throw new Error("Provider is required");
+      }
 
       const payload: Partial<Category> = {
         name: values.name.trim(),
@@ -191,6 +206,7 @@ export function CategoriesManagement() {
         isActive: values.isActive,
         sortOrder: Number(values.sortOrder || 0),
         imageUrl,
+        providerId: values.providerId ? values.providerId : undefined,
       };
 
       if (id) {
@@ -262,17 +278,34 @@ export function CategoriesManagement() {
 
       <Card>
         <CardContent className="p-4 space-y-4">
-          <div className="relative w-full max-w-lg">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={searchInput}
-              onChange={(event) => {
-                setSearchInput(event.target.value);
-                setPage(1);
-              }}
-              placeholder={t("filters.searchPlaceholder", "Search categories")}
-              className="pl-9"
-            />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative w-full max-w-lg">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchInput}
+                onChange={(event) => {
+                  setSearchInput(event.target.value);
+                  setPage(1);
+                }}
+                placeholder={t("filters.searchPlaceholder", "Search categories")}
+                className="pl-9"
+              />
+            </div>
+            {isAdmin && (
+              <Select value={providerFilter} onValueChange={(value) => { setProviderFilter(value); setPage(1); }}>
+                <SelectTrigger className="w-full sm:w-56">
+                  <SelectValue placeholder={t("providers.selectProvider", "Select provider")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("common.all")}</SelectItem>
+                  {providers.map((provider) => (
+                    <SelectItem key={provider.id} value={provider.id}>
+                      {provider.nameAr || provider.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
           <div className="flex gap-2">
             <Button
@@ -280,6 +313,7 @@ export function CategoriesManagement() {
               size="sm"
               onClick={() => {
                 setSearchInput("");
+                setProviderFilter("all");
                 setPage(1);
                 categoriesQuery.refetch();
               }}
@@ -439,6 +473,9 @@ export function CategoriesManagement() {
         mode={dialogState?.mode || "create"}
         category={dialogState?.category}
         parents={parents}
+        providers={providers}
+        showProviderSelect={isAdmin}
+        providerDefaultId={isAdmin && providerFilter !== "all" ? providerFilter : undefined}
         loading={saveMutation.isPending}
         onSubmit={(values, imageFile) => saveMutation.mutate({ id: dialogState?.category?.id, values, imageFile })}
       />
@@ -446,7 +483,18 @@ export function CategoriesManagement() {
   );
 }
 
-function CategoryFormDialog({ open, onOpenChange, mode, category, parents, loading, onSubmit }: CategoryFormDialogProps) {
+function CategoryFormDialog({
+  open,
+  onOpenChange,
+  mode,
+  category,
+  parents,
+  providers,
+  showProviderSelect,
+  providerDefaultId,
+  loading,
+  onSubmit,
+}: CategoryFormDialogProps) {
   const { t } = useTranslation();
   const form = useForm<CategoryFormValues>({
     resolver: zodResolver(categoryFormSchema) as Resolver<CategoryFormValues>,
@@ -460,7 +508,10 @@ function CategoryFormDialog({ open, onOpenChange, mode, category, parents, loadi
     form.reset(mapCategoryToForm(category));
     setImageFile(null);
     slugTouched.current = false;
-  }, [category, form]);
+    if (mode === "create" && showProviderSelect && providerDefaultId) {
+      form.setValue("providerId", providerDefaultId);
+    }
+  }, [category, form, mode, providerDefaultId, showProviderSelect]);
 
   useEffect(() => {
     if (!imageFile) {
@@ -480,6 +531,11 @@ function CategoryFormDialog({ open, onOpenChange, mode, category, parents, loadi
   }, [nameValue, form]);
 
   const submit = form.handleSubmit((values: CategoryFormValues) => onSubmit(values, imageFile));
+  const selectedProviderId = form.watch("providerId");
+  const availableParents =
+    showProviderSelect && selectedProviderId
+      ? parents.filter((parent) => parent.providerId === selectedProviderId)
+      : parents;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -513,6 +569,26 @@ function CategoryFormDialog({ open, onOpenChange, mode, category, parents, loadi
             />
             {form.formState.errors.slug && <p className="text-xs text-rose-600 mt-1">{form.formState.errors.slug.message}</p>}
           </div>
+          {showProviderSelect && (
+            <div>
+              <Label>{t("providers.title", "Provider")}</Label>
+              <Select value={form.watch("providerId") || ""} onValueChange={(value) => form.setValue("providerId", value)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={t("providers.selectProvider", "Select provider")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((provider) => (
+                    <SelectItem key={provider.id} value={provider.id}>
+                      {provider.nameAr || provider.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.formState.errors.providerId && (
+                <p className="text-xs text-rose-600 mt-1">{form.formState.errors.providerId.message}</p>
+              )}
+            </div>
+          )}
           <div>
             <Label>{t("categories.parent")}</Label>
             <select
@@ -521,7 +597,7 @@ function CategoryFormDialog({ open, onOpenChange, mode, category, parents, loadi
               onChange={(event) => form.setValue("parentId", event.target.value)}
             >
               <option value="">{t("categories.root", "Root")}</option>
-              {parents.map((parent) => (
+              {availableParents.map((parent) => (
                 <option key={parent.id} value={parent.id}>
                   {parent.name}
                 </option>

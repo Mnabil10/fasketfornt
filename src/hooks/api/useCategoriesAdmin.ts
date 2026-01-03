@@ -5,6 +5,7 @@ export type UseCategoriesAdminFilters = {
   q?: string;
   parentId?: string;
   isActive?: boolean;
+  providerId?: string;
   page?: number;
   pageSize?: number;
   sort?: string;

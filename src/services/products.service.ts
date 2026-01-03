@@ -21,6 +21,7 @@ export type Product = {
   status: "DRAFT" | "ACTIVE" | "HIDDEN" | "DISCONTINUED";
   categoryId: string;
   sku?: string | null;
+  providerId?: string | null;
 };
 export type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 
@@ -87,6 +88,7 @@ function buildProductFormData(body: ProductPayload, imageFile?: File | null) {
   if (body.stock != null) fd.append("stock", String(Math.trunc(Number(body.stock))));
   if (body.status != null) fd.append("status", String(body.status));
   if (body.categoryId != null) fd.append("categoryId", String(body.categoryId));
+  if (body.providerId != null) fd.append("providerId", String(body.providerId));
   if (body.imageUrl) fd.append("imageUrl", body.imageUrl);
   if (body.sku) fd.append("sku", String(body.sku));
   appendImages(fd, body.images);

@@ -12,6 +12,7 @@ export type Category = {
   isActive: boolean;
   sortOrder: number;
   parentId: string | null;
+  providerId?: string | null;
 };
 export type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 
@@ -30,6 +31,10 @@ function buildCategoryFormData(body: CategoryPayload, imageFile?: File | null) {
     const parent = body.parentId === null ? "" : String(body.parentId);
     fd.append("parentId", parent);
   }
+  if (body.providerId !== undefined) {
+    const provider = body.providerId === null ? "" : String(body.providerId);
+    fd.append("providerId", provider);
+  }
   if (body.imageUrl) fd.append("imageUrl", body.imageUrl);
   if (imageFile) fd.append("image", imageFile, imageFile.name || "image");
   return fd;
@@ -39,6 +44,7 @@ export async function listCategories(params?: {
   q?: string;
   parentId?: string;
   isActive?: boolean;
+  providerId?: string;
   page?: number;
   pageSize?: number;
   sort?: string;

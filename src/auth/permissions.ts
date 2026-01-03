@@ -32,6 +32,7 @@ const ROLE_CAPABILITIES: Record<string, Capability[]> = {
     "orders:view-pii",
   ],
   FINANCE: ["reports:profit", "orders:view-pii"],
+  PROVIDER: ["orders:update", "orders:view-history", "orders:view-pii"],
   STAFF: ["automation:view", "support:view"],
 };
 

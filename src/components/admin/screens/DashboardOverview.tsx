@@ -25,7 +25,7 @@ import {
   YAxis,
   Tooltip,
 } from "recharts";
-import { ShoppingCart, Users, DollarSign, TrendingUp, ArrowRight, Flame } from "lucide-react";
+import { ShoppingCart, Users, DollarSign, TrendingUp, ArrowRight, Flame, Truck, UserCheck } from "lucide-react";
 
 export type AdminState = {
   currentScreen: "dashboard" | "products" | "categories" | "orders" | "customers" | "settings";
@@ -105,6 +105,16 @@ export function DashboardOverview({ updateAdminState }: Props) {
           value: (summary.customersCount ?? 0).toLocaleString(),
           icon: Users,
         },
+        {
+          label: t("dashboard.activeOrders", "Active orders"),
+          value: (summary.activeOrders ?? 0).toLocaleString(),
+          icon: Truck,
+        },
+        {
+          label: t("dashboard.activeDrivers", "Active drivers"),
+          value: (summary.activeDrivers ?? 0).toLocaleString(),
+          icon: UserCheck,
+        },
       ]
     : [];
 
@@ -159,7 +169,7 @@ export function DashboardOverview({ updateAdminState }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
         {summaryQuery.isLoading
           ? Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-28" />)
           : stats.map((stat) => (

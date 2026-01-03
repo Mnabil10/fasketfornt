@@ -18,11 +18,13 @@ export type Product = Timestamped & {
   status: ProductStatus;
   categoryId: string;
   sku?: string | null;
+  providerId?: string | null;
 };
 
 export type ProductFilters = PaginatedQuery & {
   q?: string;
   categoryId?: string;
+  providerId?: string;
   status?: ProductStatus;
   minPriceCents?: number;
   maxPriceCents?: number;

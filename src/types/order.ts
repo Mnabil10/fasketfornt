@@ -63,6 +63,10 @@ export type OrderDetail = Order & {
   metadata?: Record<string, unknown>;
   currency?: string;
   allowedTransitions?: OrderStatus[];
+  estimatedDeliveryTime?: string | null;
+  deliveryEtaMinutes?: number | null;
+  deliveryDistanceKm?: number | null;
+  deliveryRatePerKmCents?: number | null;
 };
 
 export type OrderFilters = PaginatedQuery & {

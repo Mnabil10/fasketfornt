@@ -7,7 +7,7 @@ import { Button } from "../ui/button";
 import { useTranslation } from "react-i18next";
 import { adminLogin } from "../../services/auth.service";
 import { useAuth } from "../../auth/AuthProvider";
-import { useLocation, useNavigate, type Location } from "react-router-dom";
+import { Link, useLocation, useNavigate, type Location } from "react-router-dom";
 import BrandLogo from "../common/BrandLogo";
 import { useDirection } from "../../hooks/useDirection";
 import { getAdminErrorMessage, getErrorCode } from "../../lib/errors";
@@ -95,7 +95,7 @@ export default function SignIn() {
 
       const res = await adminLogin(identifier, values.password, otp as string | undefined);
       const normalizedRole = (res.user?.role || "").toUpperCase();
-      if (!["ADMIN", "STAFF"].includes(normalizedRole)) {
+      if (!["ADMIN", "STAFF", "OPS_MANAGER", "FINANCE", "PROVIDER"].includes(normalizedRole)) {
         setServerError(t("auth.not_admin") as string);
         return;
       }
@@ -109,7 +109,9 @@ export default function SignIn() {
       navigate(from, { replace: true });
     } catch (e: unknown) {
       const code = getErrorCode(e);
-      if (code === "INVALID_CREDENTIALS") {
+      if (code === "AUTH_ACCOUNT_DISABLED") {
+        setServerError(t("auth.account_pending", "Account pending admin approval"));
+      } else if (code === "INVALID_CREDENTIALS") {
         setServerError(t("errors.INVALID_CREDENTIALS", "Incorrect email or password"));
       } else if (code === "AUTH_2FA_REQUIRED") {
         setRequireOtp(true);
@@ -195,6 +197,13 @@ export default function SignIn() {
               {loading ? t("auth.signing_in") : t("auth.sign_in_btn")}
             </Button>
           </form>
+
+          <div className="mt-4 text-center text-sm text-gray-600">
+            {t("auth.provider_signup_cta", "Need a provider account?")}{" "}
+            <Link to="/provider-signup" className="text-primary hover:underline">
+              {t("auth.provider_signup_link", "Create one")}
+            </Link>
+          </div>
 
           <div className="flex items-center justify-between mt-6 text-sm text-gray-600">
             <span>{t("auth.footer_note")}</span>

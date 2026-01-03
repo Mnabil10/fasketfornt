@@ -12,14 +12,14 @@ import { Switch } from "../../ui/switch";
 import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
 import { EmptyState } from "../common/EmptyState";
 import { ErrorState } from "../common/ErrorState";
-import { Search, Truck, Filter, RefreshCcw, Receipt, Clock, PhoneCall, MessageCircle, Shield } from "lucide-react";
+import { Search, Truck, Filter, RefreshCcw, Receipt, Clock, PhoneCall, MessageCircle, Shield, MapPin } from "lucide-react";
 import dayjs from "dayjs";
 import { toast } from "sonner";
 import { ORDERS_QUERY_KEY, useOrdersAdmin } from "../../../hooks/api/useOrdersAdmin";
 import { useDeliveryDrivers } from "../../../hooks/api/useDeliveryDrivers";
 import { useAssignDriver } from "../../../hooks/api/useAssignDriver";
 import { useOrderReceipt } from "../../../hooks/api/useOrderReceipt";
-import { cancelOrder, getOrder, getOrderHistory, getOrderTransitions, updateOrderStatus } from "../../../services/orders.service";
+import { cancelOrder, getOrder, getOrderDriverLocation, getOrderHistory, getOrderTransitions, updateOrderStatus } from "../../../services/orders.service";
 import { fetchAutomationEvents } from "../../../services/automation.service";
 import { getAdminErrorMessage } from "../../../lib/errors";
 import { usePermissions } from "../../../auth/permissions";
@@ -38,6 +38,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const perms = usePermissions();
+  const isProvider = perms.role === "PROVIDER";
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialOrderId ?? null);
   const [detailOpen, setDetailOpen] = useState<boolean>(Boolean(initialOrderId));
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -101,7 +102,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     [debouncedDriverSearch]
   );
 
-  const driversQuery = useDeliveryDrivers(driverFilters, { enabled: detailOpen });
+  const driversQuery = useDeliveryDrivers(driverFilters, { enabled: detailOpen && perms.canAssignDriver });
 
   const detailQuery = useQuery({
     queryKey: [...ORDERS_QUERY_KEY, "detail", selectedOrderId],
@@ -119,6 +120,13 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     queryKey: [...ORDERS_QUERY_KEY, "history", selectedOrderId],
     queryFn: () => (selectedOrderId ? getOrderHistory(selectedOrderId) : []),
     enabled: perms.canViewHistory && Boolean(selectedOrderId),
+  });
+
+  const driverLocationQuery = useQuery({
+    queryKey: [...ORDERS_QUERY_KEY, "driver-location", selectedOrderId],
+    queryFn: () => (selectedOrderId ? getOrderDriverLocation(selectedOrderId) : null),
+    enabled: detailOpen && Boolean(selectedOrderId),
+    refetchInterval: detailQuery.data?.status === "OUT_FOR_DELIVERY" ? 15000 : false,
   });
 
   const receiptQuery = useOrderReceipt(selectedOrderId || undefined, {
@@ -363,25 +371,27 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                 ))}
               </SelectContent>
             </Select>
-            <Select
-              value={filters.driverId || "all"}
-              onValueChange={(val) => {
-                setPage(1);
-                setFilters((prev) => ({ ...prev, driverId: val === "all" ? undefined : val }));
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={t("orders.driver_filter", "Driver")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("common.all", "All")}</SelectItem>
-                {(driversQuery.data?.items || []).map((driver) => (
-                  <SelectItem key={driver.id} value={driver.id}>
-                    {driver.fullName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {!isProvider && (
+              <Select
+                value={filters.driverId || "all"}
+                onValueChange={(val) => {
+                  setPage(1);
+                  setFilters((prev) => ({ ...prev, driverId: val === "all" ? undefined : val }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t("orders.driver_filter", "Driver")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("common.all", "All")}</SelectItem>
+                  {(driversQuery.data?.items || []).map((driver) => (
+                    <SelectItem key={driver.id} value={driver.id}>
+                      {driver.fullName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <div className="flex items-center gap-2">
               <Switch
                 id="stuckOnly"
@@ -609,62 +619,64 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                   </CardContent>
                 </Card>
 
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle className="text-sm">{t("orders.assignDriver", "Assign driver")}</CardTitle>
-                    <Truck className="w-4 h-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="space-y-2">
-                      <Input
-                        placeholder={t("orders.searchDriver", "Search drivers")}
-                        value={driverSearch}
-                        onChange={(e) => setDriverSearch(e.target.value)}
-                      />
-                    </div>
-                    <Select value={selectedDriverIdToAssign} onValueChange={(val) => setSelectedDriverIdToAssign(val)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t("orders.selectDriver", "Select driver")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(driversQuery.data?.items || []).map((driver) => (
-                          <SelectItem key={driver.id} value={driver.id}>
-                            {driver.fullName} {driver.phone ? `(${driver.phone})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        onClick={onAssignDriver}
-                        disabled={!selectedDriverIdToAssign || assignDriverMutation.isPending || assignNotAllowed}
-                      >
-                        {assignDriverMutation.isPending
-                          ? t("common.saving", "Saving...")
-                          : t("orders.assignDriver", "Assign driver")}
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => driversQuery.refetch()}>
-                        {t("common.refresh", "Refresh")}
-                      </Button>
-                    </div>
-                    {assignNotAllowed && (
-                      <p className="text-xs text-orange-600">
-                        {t("orders.assignDriverDisabled", "Driver assignment is blocked for completed or canceled orders.")}
-                      </p>
-                    )}
-                    {detailQuery.data.driver ? (
-                      <div className="text-sm text-muted-foreground">
-                        {t("orders.currentDriver", "Current:")} {detailQuery.data.driver.fullName} -{" "}
-                        {perms.canViewPII ? detailQuery.data.driver.phone : maskPhone(detailQuery.data.driver.phone)}
+                {perms.canAssignDriver && (
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between">
+                      <CardTitle className="text-sm">{t("orders.assignDriver", "Assign driver")}</CardTitle>
+                      <Truck className="w-4 h-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="space-y-2">
+                        <Input
+                          placeholder={t("orders.searchDriver", "Search drivers")}
+                          value={driverSearch}
+                          onChange={(e) => setDriverSearch(e.target.value)}
+                        />
                       </div>
-                    ) : (
-                      <div className="text-sm text-muted-foreground">{t("orders.noDriver", "No driver assigned")}</div>
-                    )}
-                  </CardContent>
-                </Card>
+                      <Select value={selectedDriverIdToAssign} onValueChange={(val) => setSelectedDriverIdToAssign(val)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t("orders.selectDriver", "Select driver")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(driversQuery.data?.items || []).map((driver) => (
+                            <SelectItem key={driver.id} value={driver.id}>
+                              {driver.fullName} {driver.phone ? `(${driver.phone})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          onClick={onAssignDriver}
+                          disabled={!selectedDriverIdToAssign || assignDriverMutation.isPending || assignNotAllowed}
+                        >
+                          {assignDriverMutation.isPending
+                            ? t("common.saving", "Saving...")
+                            : t("orders.assignDriver", "Assign driver")}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => driversQuery.refetch()}>
+                          {t("common.refresh", "Refresh")}
+                        </Button>
+                      </div>
+                      {assignNotAllowed && (
+                        <p className="text-xs text-orange-600">
+                          {t("orders.assignDriverDisabled", "Driver assignment is blocked for completed or canceled orders.")}
+                        </p>
+                      )}
+                      {detailQuery.data.driver ? (
+                        <div className="text-sm text-muted-foreground">
+                          {t("orders.currentDriver", "Current:")} {detailQuery.data.driver.fullName} -{" "}
+                          {perms.canViewPII ? detailQuery.data.driver.phone : maskPhone(detailQuery.data.driver.phone)}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">{t("orders.noDriver", "No driver assigned")}</div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <Card>
                   <CardHeader className="flex items-center justify-between">
                     <CardTitle className="text-sm flex items-center gap-2">
@@ -680,71 +692,120 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                   </CardContent>
                 </Card>
 
+                {perms.canViewAutomation && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <MessageCircle className="w-4 h-4" />
+                        {t("orders.automation", "Automation / Notifications")}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {automationItems.length ? (
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="space-y-1">
+                            <p className="text-muted-foreground">{t("orders.lastAutomation", "Last automation status")}</p>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={["FAILED", "DEAD"].includes((automationItems[0].status || "").toUpperCase()) ? "destructive" : "outline"}>
+                                {automationItems[0].status}
+                              </Badge>
+                              {automationItems[0].lastHttpStatus ? (
+                                <span className="text-xs text-muted-foreground">HTTP {automationItems[0].lastHttpStatus}</span>
+                              ) : null}
+                            </div>
+                            {automationItems[0].lastErrorSnippet ? (
+                              <p className="text-xs text-red-600 line-clamp-2">{automationItems[0].lastErrorSnippet}</p>
+                            ) : null}
+                            {automationItems[0].lastResponseSnippet ? (
+                              <p className="text-xs text-muted-foreground line-clamp-2">{automationItems[0].lastResponseSnippet}</p>
+                            ) : null}
+                            {automationUsedFallback && (
+                              <p className="text-[11px] text-muted-foreground">
+                                {t("orders.automation_fallback", "Using fallback search by order ID because order code was not present in payload.")}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                      {automationLoading ? (
+                        <AdminTableSkeleton rows={2} columns={3} />
+                      ) : automationError ? (
+                        <ErrorState
+                          message={getAdminErrorMessage(automationError, t)}
+                          onRetry={() => {
+                            automationQuery.refetch();
+                            fallbackAutomationQuery.refetch();
+                          }}
+                        />
+                      ) : automationItems.length ? (
+                        <div className="space-y-2">
+                          {automationItems.slice(0, 4).map((evt) => (
+                            <div key={evt.id} className="flex items-start justify-between gap-3 border-b last:border-0 pb-2">
+                              <div>
+                                <p className="font-medium text-sm">{evt.type}</p>
+                                <p className="text-xs text-muted-foreground">{evt.correlationId || detailQuery.data.code}</p>
+                                {evt.lastErrorSnippet && (
+                                  <p className="text-xs text-red-600 line-clamp-2">{evt.lastErrorSnippet}</p>
+                                )}
+                              </div>
+                              <Badge variant={evt.status === "FAILED" || evt.status === "DEAD" ? "destructive" : "outline"}>
+                                {evt.status}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          {t("orders.no_automation_hint", "No automation events found for this order (may be older data or backfill pending).")}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <MessageCircle className="w-4 h-4" />
-                      {t("orders.automation", "Automation / Notifications")}
+                      <MapPin className="w-4 h-4" />
+                      {t("orders.tracking", "Live tracking")}
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2">
-                    {automationItems.length ? (
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="space-y-1">
-                          <p className="text-muted-foreground">{t("orders.lastAutomation", "Last automation status")}</p>
-                          <div className="flex items-center gap-2">
-                            <Badge variant={["FAILED", "DEAD"].includes((automationItems[0].status || "").toUpperCase()) ? "destructive" : "outline"}>
-                              {automationItems[0].status}
-                            </Badge>
-                            {automationItems[0].lastHttpStatus ? (
-                              <span className="text-xs text-muted-foreground">HTTP {automationItems[0].lastHttpStatus}</span>
-                            ) : null}
-                          </div>
-                          {automationItems[0].lastErrorSnippet ? (
-                            <p className="text-xs text-red-600 line-clamp-2">{automationItems[0].lastErrorSnippet}</p>
-                          ) : null}
-                          {automationItems[0].lastResponseSnippet ? (
-                            <p className="text-xs text-muted-foreground line-clamp-2">{automationItems[0].lastResponseSnippet}</p>
-                          ) : null}
-                          {automationUsedFallback && (
-                            <p className="text-[11px] text-muted-foreground">
-                              {t("orders.automation_fallback", "Using fallback search by order ID because order code was not present in payload.")}
-                            </p>
-                          )}
+                  <CardContent className="space-y-2 text-sm">
+                    {driverLocationQuery.isLoading && (
+                      <p className="text-muted-foreground">{t("orders.trackingLoading", "Loading location...")}</p>
+                    )}
+                    {!driverLocationQuery.isLoading && !driverLocationQuery.data && (
+                      <p className="text-muted-foreground">{t("orders.trackingEmpty", "No driver location yet.")}</p>
+                    )}
+                    {driverLocationQuery.data && (
+                      <>
+                        <div className="flex justify-between">
+                          <span>{t("orders.trackingUpdated", "Updated")}</span>
+                          <span>{dayjs(driverLocationQuery.data.recordedAt).format("DD MMM YYYY HH:mm")}</span>
                         </div>
-                      </div>
-                    ) : null}
-                    {automationLoading ? (
-                      <AdminTableSkeleton rows={2} columns={3} />
-                    ) : automationError ? (
-                      <ErrorState
-                        message={getAdminErrorMessage(automationError, t)}
-                        onRetry={() => {
-                          automationQuery.refetch();
-                          fallbackAutomationQuery.refetch();
-                        }}
-                      />
-                    ) : automationItems.length ? (
-                      <div className="space-y-2">
-                        {automationItems.slice(0, 4).map((evt) => (
-                          <div key={evt.id} className="flex items-start justify-between gap-3 border-b last:border-0 pb-2">
-                            <div>
-                              <p className="font-medium text-sm">{evt.type}</p>
-                              <p className="text-xs text-muted-foreground">{evt.correlationId || detailQuery.data.code}</p>
-                              {evt.lastErrorSnippet && (
-                                <p className="text-xs text-red-600 line-clamp-2">{evt.lastErrorSnippet}</p>
-                              )}
-                            </div>
-                            <Badge variant={evt.status === "FAILED" || evt.status === "DEAD" ? "destructive" : "outline"}>
-                              {evt.status}
-                            </Badge>
+                        <div className="flex justify-between">
+                          <span>{t("orders.trackingCoords", "Coordinates")}</span>
+                          <span>
+                            {driverLocationQuery.data.lat.toFixed(5)}, {driverLocationQuery.data.lng.toFixed(5)}
+                          </span>
+                        </div>
+                        {detailQuery.data?.estimatedDeliveryTime && (
+                          <div className="flex justify-between">
+                            <span>{t("orders.trackingEta", "ETA")}</span>
+                            <span>{detailQuery.data.estimatedDeliveryTime}</span>
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        {t("orders.no_automation_hint", "No automation events found for this order (may be older data or backfill pending).")}
-                      </p>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const { lat, lng } = driverLocationQuery.data!;
+                            window.open(`https://maps.google.com/?q=${lat},${lng}`, "_blank", "noopener,noreferrer");
+                          }}
+                        >
+                          {t("orders.trackingOpenMap", "Open map")}
+                        </Button>
+                      </>
                     )}
                   </CardContent>
                 </Card>
