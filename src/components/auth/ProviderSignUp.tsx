@@ -25,7 +25,7 @@ function cleanPhone(raw: string) {
 }
 
 const schema = z.object({
-  name: z.string({ required_error: "validation.required" }).transform((v) => v.trim()).min(2, "validation.required"),
+  name: z.string({ required_error: "validation.required" }).min(2, "validation.required").transform((v) => v.trim()),
   phone: z
     .string({ required_error: "validation.required" })
     .transform((v) => normalizeDigits(v).trim())
@@ -39,7 +39,7 @@ const schema = z.object({
     .string({ required_error: "validation.required" })
     .min(8, { message: "validation.password" })
     .refine((v) => /[A-Za-z]/.test(v) && /\d/.test(v), { message: "validation.password" }),
-  providerName: z.string({ required_error: "validation.required" }).transform((v) => v.trim()).min(2, "validation.required"),
+  providerName: z.string({ required_error: "validation.required" }).min(2, "validation.required").transform((v) => v.trim()),
   providerNameAr: z.string().optional(),
   providerType: z.string({ required_error: "validation.required" }),
   branchName: z.string().optional(),
