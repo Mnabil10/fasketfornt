@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { useForm, type Resolver } from "react-hook-form";
+import { useForm, type Resolver, type FieldError } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
@@ -29,10 +29,17 @@ import type {
 } from "../../../types/settings";
 import { useNavigate } from "react-router-dom";
 
+const optionalEmail = z
+  .string()
+  .trim()
+  .email("validation.identifier")
+  .optional()
+  .or(z.literal(""));
+
 const generalSchema = z.object({
   storeName: z.string().min(2),
   storeDescription: z.string().optional(),
-  contactEmail: z.string().email().optional(),
+  contactEmail: optionalEmail,
   contactPhone: z.string().optional(),
   storeAddress: z.string().optional(),
   businessHours: z.string().optional(),
@@ -48,13 +55,32 @@ const deliverySchema = z.object({
   maxDeliveryRadius: z.coerce.number().min(0).nullable().optional(),
 });
 
-const paymentSchema = z.object({
-  cashOnDeliveryEnabled: z.boolean(),
-  cashOnDeliveryMaxAmount: z.coerce.number().min(0).nullable().optional(),
-  stripeEnabled: z.boolean(),
-  stripePublicKey: z.string().optional(),
-  stripeSecretKey: z.string().optional(),
-});
+const paymentSchema = z
+  .object({
+    cashOnDeliveryEnabled: z.boolean(),
+    cashOnDeliveryMaxAmount: z.coerce.number().min(0).nullable().optional(),
+    stripeEnabled: z.boolean(),
+    stripePublicKey: z.string().optional(),
+    stripeSecretKey: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.stripeEnabled) {
+      if (!value.stripePublicKey || !value.stripePublicKey.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["stripePublicKey"],
+          message: "validation.required",
+        });
+      }
+      if (!value.stripeSecretKey || !value.stripeSecretKey.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["stripeSecretKey"],
+          message: "validation.required",
+        });
+      }
+    }
+  });
 
 const notificationsSchema = z.object({
   notifyEmail: z.boolean(),
@@ -308,6 +334,20 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
   const [mobileAppDraft, setMobileAppDraft] = React.useState<MobileAppConfig>(() => normalizeMobileAppConfig(null));
   const [mobileAppJson, setMobileAppJson] = React.useState(mobileAppTemplateJson);
   const [mobileAppJsonError, setMobileAppJsonError] = React.useState<string | null>(null);
+  const [mobileAppBaseline, setMobileAppBaseline] = React.useState<string | null>(null);
+
+  const mobileAppDraftSerialized = React.useMemo(() => JSON.stringify(mobileAppDraft ?? {}), [mobileAppDraft]);
+  const isMobileAppDirty = mobileAppBaseline !== null && mobileAppDraftSerialized !== mobileAppBaseline;
+  const mobileAppDirtyRef = React.useRef(false);
+
+  React.useEffect(() => {
+    mobileAppDirtyRef.current = isMobileAppDirty;
+  }, [isMobileAppDirty]);
+
+  const renderError = (error?: FieldError) => {
+    if (!error?.message) return null;
+    return <p className="text-xs text-rose-600 mt-1">{t(error.message, { defaultValue: error.message })}</p>;
+  };
 
   const generalForm = useForm<GeneralFormValues>({
     resolver: zodResolver(generalSchema) as Resolver<GeneralFormValues>,
@@ -482,9 +522,12 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
     const raw = settingsQuery.data?.mobileApp;
     if (raw === undefined) return;
     const normalized = normalizeMobileAppConfig(raw);
+    const serialized = JSON.stringify(normalized);
+    if (mobileAppDirtyRef.current) return;
     setMobileAppDraft(normalized);
     setMobileAppJson(JSON.stringify(normalized, null, 2));
     setMobileAppJsonError(null);
+    setMobileAppBaseline(serialized);
   }, [settingsQuery.data?.mobileApp]);
 
   useEffect(() => {
@@ -603,9 +646,41 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
     }
   });
 
-  const handleMobileAppSave = async () => {
+  const parseMobileAppJson = (raw: string) => {
+    if (!raw) return normalizeMobileAppConfig(mobileAppTemplate);
     try {
-      await mobileAppMutation.mutateAsync(mobileAppDraft);
+      return normalizeMobileAppConfig(JSON.parse(raw));
+    } catch {
+      return null;
+    }
+  };
+
+  const applyMobileAppJson = (raw: string) => {
+    const normalized = parseMobileAppJson(raw);
+    if (!normalized) {
+      setMobileAppJsonError(t("settings.mobileAppInvalid", "Mobile app config must be valid JSON."));
+      return null;
+    }
+    setMobileAppDraft(normalized);
+    setMobileAppJson(JSON.stringify(normalized, null, 2));
+    setMobileAppJsonError(null);
+    return normalized;
+  };
+
+  const handleMobileAppSave = async () => {
+    let payload = mobileAppDraft;
+    if (mobileAppEditorMode === "json") {
+      const normalized = applyMobileAppJson(mobileAppJson.trim());
+      if (!normalized) {
+        toast.error(t("settings.mobileAppInvalid", "Mobile app config must be valid JSON."));
+        return;
+      }
+      payload = normalized;
+    }
+    try {
+      await mobileAppMutation.mutateAsync(payload);
+      setMobileAppBaseline(JSON.stringify(payload));
+      mobileAppDirtyRef.current = false;
       toast.success(t("settings.saved", "Settings updated"));
     } catch (error) {
       toast.error(getAdminErrorMessage(error, t));
@@ -621,21 +696,9 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
 
   const handleMobileAppApplyJson = () => {
     const raw = mobileAppJson.trim();
-    if (!raw) {
-      const normalized = normalizeMobileAppConfig(mobileAppTemplate);
-      setMobileAppDraft(normalized);
-      setMobileAppJson(JSON.stringify(normalized, null, 2));
-      setMobileAppJsonError(null);
-      return;
-    }
-    try {
-      const parsed = JSON.parse(raw);
-      const normalized = normalizeMobileAppConfig(parsed);
-      setMobileAppDraft(normalized);
-      setMobileAppJson(JSON.stringify(normalized, null, 2));
-      setMobileAppJsonError(null);
-    } catch (error) {
-      setMobileAppJsonError(t("settings.mobileAppInvalid", "Mobile app config must be valid JSON."));
+    const normalized = applyMobileAppJson(raw);
+    if (!normalized) {
+      toast.error(t("settings.mobileAppInvalid", "Mobile app config must be valid JSON."));
     }
   };
 
@@ -645,6 +708,11 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
     if (nextValue === "json") {
       setMobileAppJson(JSON.stringify(mobileAppDraft, null, 2));
       setMobileAppJsonError(null);
+      return;
+    }
+    const normalized = applyMobileAppJson(mobileAppJson.trim());
+    if (!normalized) {
+      toast.error(t("settings.mobileAppInvalid", "Mobile app config must be valid JSON."));
     }
   };
 
@@ -708,26 +776,32 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                 <div className="space-y-2">
                   <Label>{t("settings.storeName", "Store name")}</Label>
                   <Input {...generalForm.register("storeName")} />
+                  {renderError(generalForm.formState.errors.storeName)}
                 </div>
                 <div className="space-y-2">
                   <Label>{t("settings.storeDescription", "Description")}</Label>
                   <Input {...generalForm.register("storeDescription")} />
+                  {renderError(generalForm.formState.errors.storeDescription)}
                 </div>
                 <div className="space-y-2">
                   <Label>{t("settings.contactEmail", "Contact email")}</Label>
                   <Input type="email" {...generalForm.register("contactEmail")} />
+                  {renderError(generalForm.formState.errors.contactEmail)}
                 </div>
                 <div className="space-y-2">
                   <Label>{t("settings.contactPhone", "Contact phone")}</Label>
                   <Input {...generalForm.register("contactPhone")} />
+                  {renderError(generalForm.formState.errors.contactPhone)}
                 </div>
                 <div className="space-y-2">
                   <Label>{t("settings.storeAddress", "Store address")}</Label>
                   <Input {...generalForm.register("storeAddress")} />
+                  {renderError(generalForm.formState.errors.storeAddress)}
                 </div>
                 <div className="space-y-2">
                   <Label>{t("settings.businessHours", "Business hours")}</Label>
                   <Input {...generalForm.register("businessHours")} />
+                  {renderError(generalForm.formState.errors.businessHours)}
                 </div>
                 <div className="md:col-span-2 flex justify-end">
                   <Button type="submit" disabled={generalMutation.isPending}>
@@ -750,22 +824,27 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                   <div className="space-y-2">
                     <Label>{t("settings.defaultDeliveryFee", "Default delivery fee (currency)")}</Label>
                     <Input type="number" step="0.01" {...deliveryForm.register("deliveryFee", { valueAsNumber: true })} />
+                    {renderError(deliveryForm.formState.errors.deliveryFee)}
                   </div>
                   <div className="space-y-2">
                     <Label>{t("settings.freeDeliveryThreshold", "Free delivery minimum (currency)")}</Label>
                     <Input type="number" step="0.01" {...deliveryForm.register("freeDeliveryMinimum", { valueAsNumber: true })} />
+                    {renderError(deliveryForm.formState.errors.freeDeliveryMinimum)}
                   </div>
                   <div className="space-y-2">
                     <Label>{t("settings.deliveryRatePerKm", "Rate per km (currency)")}</Label>
                     <Input type="number" step="0.01" {...deliveryForm.register("deliveryRatePerKm", { valueAsNumber: true })} />
+                    {renderError(deliveryForm.formState.errors.deliveryRatePerKm)}
                   </div>
                   <div className="space-y-2">
                     <Label>{t("settings.minDeliveryFee", "Min delivery fee (currency)")}</Label>
                     <Input type="number" step="0.01" {...deliveryForm.register("minDeliveryFee", { valueAsNumber: true })} />
+                    {renderError(deliveryForm.formState.errors.minDeliveryFee)}
                   </div>
                   <div className="space-y-2">
                     <Label>{t("settings.maxDeliveryFee", "Max delivery fee (currency)")}</Label>
                     <Input type="number" step="0.01" {...deliveryForm.register("maxDeliveryFee", { valueAsNumber: true })} />
+                    {renderError(deliveryForm.formState.errors.maxDeliveryFee)}
                   </div>
                   <div className="space-y-2">
                     <Label>{t("settings.estimatedDeliveryTime", "Estimated delivery time (minutes)")}</Label>
@@ -775,6 +854,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                       step={5}
                       {...deliveryForm.register("estimatedDeliveryTime", { valueAsNumber: true })}
                     />
+                    {renderError(deliveryForm.formState.errors.estimatedDeliveryTime)}
                   </div>
                   <div className="space-y-2">
                     <Label>{t("settings.maxDeliveryRadius", "Max delivery radius (km)")}</Label>
@@ -784,6 +864,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                       step="0.1"
                       {...deliveryForm.register("maxDeliveryRadius", { valueAsNumber: true })}
                     />
+                    {renderError(deliveryForm.formState.errors.maxDeliveryRadius)}
                   </div>
                 </div>
 
@@ -829,6 +910,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                     <div className="space-y-2">
                       <Label>{t("settings.loyaltyEarnPoints", "Points awarded")}</Label>
                       <Input type="number" min={0} step="0.01" {...loyaltyForm.register("earnPoints", { valueAsNumber: true })} />
+                      {renderError(loyaltyForm.formState.errors.earnPoints)}
                       <p className="text-xs text-muted-foreground">
                         {t("settings.loyaltyEarnPointsDesc", "Points granted each time the spend rule is met")}
                       </p>
@@ -841,6 +923,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                         step="0.01"
                         {...loyaltyForm.register("earnPerAmount", { valueAsNumber: true })}
                       />
+                      {renderError(loyaltyForm.formState.errors.earnPerAmount)}
                       <p className="text-xs text-muted-foreground">
                         {t("settings.loyaltyEarnPerDesc", "Amount customers must spend to earn the points above")}
                       </p>
@@ -848,10 +931,12 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                     <div className="space-y-2">
                       <Label>{t("settings.loyaltyEarnRate", "Earn rate multiplier")}</Label>
                       <Input type="number" min={0} step="0.01" {...loyaltyForm.register("earnRate", { valueAsNumber: true })} />
+                      {renderError(loyaltyForm.formState.errors.earnRate)}
                     </div>
                     <div className="space-y-2">
                       <Label>{t("settings.loyaltyReset", "Points reset threshold")}</Label>
                       <Input type="number" min={0} step="1" {...loyaltyForm.register("resetThreshold", { valueAsNumber: true })} />
+                      {renderError(loyaltyForm.formState.errors.resetThreshold)}
                       <p className="text-xs text-muted-foreground">
                         {t("settings.loyaltyResetDesc", "Set when points expire or reset.")}
                       </p>
@@ -865,6 +950,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                     <div className="space-y-2">
                       <Label>{t("settings.loyaltyRedeemRate", "Points per redeem unit")}</Label>
                       <Input type="number" min={0} step="1" {...loyaltyForm.register("redeemRate", { valueAsNumber: true })} />
+                      {renderError(loyaltyForm.formState.errors.redeemRate)}
                     </div>
                     <div className="space-y-2">
                       <Label>{t("settings.loyaltyRedeemUnit", "Redeem unit (currency)")}</Label>
@@ -874,6 +960,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                         step="0.01"
                         {...loyaltyForm.register("redeemUnitAmount", { valueAsNumber: true })}
                       />
+                      {renderError(loyaltyForm.formState.errors.redeemUnitAmount)}
                     </div>
                     <div className="space-y-2">
                       <Label>{t("settings.loyaltyRedeemValue", "Redeem value per unit")}</Label>
@@ -883,6 +970,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                         step="0.01"
                         {...loyaltyForm.register("redeemRateValue", { valueAsNumber: true })}
                       />
+                      {renderError(loyaltyForm.formState.errors.redeemRateValue)}
                       <p className="text-xs text-muted-foreground">
                         {t("settings.loyaltyRedeemValueDesc", "Discount value granted for each redeem unit")}
                       </p>
@@ -901,6 +989,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                         step="1"
                         {...loyaltyForm.register("minRedeemPoints", { valueAsNumber: true })}
                       />
+                      {renderError(loyaltyForm.formState.errors.minRedeemPoints)}
                     </div>
                     <div className="space-y-2">
                       <Label>{t("settings.loyaltyMaxRedeem", "Max points per order")}</Label>
@@ -910,6 +999,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                         step="1"
                         {...loyaltyForm.register("maxRedeemPerOrder", { valueAsNumber: true })}
                       />
+                      {renderError(loyaltyForm.formState.errors.maxRedeemPerOrder)}
                     </div>
                     <div className="space-y-2">
                       <Label>{t("settings.loyaltyMaxDiscount", "Max discount (%)")}</Label>
@@ -920,6 +1010,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                         step="1"
                         {...loyaltyForm.register("maxDiscountPercent", { valueAsNumber: true })}
                       />
+                      {renderError(loyaltyForm.formState.errors.maxDiscountPercent)}
                     </div>
                   </div>
                 </div>
@@ -955,6 +1046,7 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                   <div className="space-y-2">
                     <Label>{t("settings.codLimit", "COD max amount")}</Label>
                     <Input type="number" {...paymentsForm.register("cashOnDeliveryMaxAmount", { valueAsNumber: true })} />
+                    {renderError(paymentsForm.formState.errors.cashOnDeliveryMaxAmount)}
                   </div>
                   <div className="flex items-center justify-between border rounded-lg p-3 md:col-span-2">
                     <div>
@@ -969,10 +1061,12 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                   <div className="space-y-2">
                     <Label>Stripe Public Key</Label>
                     <Input {...paymentsForm.register("stripePublicKey")} />
+                    {renderError(paymentsForm.formState.errors.stripePublicKey)}
                   </div>
                   <div className="space-y-2">
                     <Label>Stripe Secret Key</Label>
                     <Input {...paymentsForm.register("stripeSecretKey")} />
+                    {renderError(paymentsForm.formState.errors.stripeSecretKey)}
                   </div>
                 </div>
                 <div className="flex justify-end">
@@ -1054,31 +1148,38 @@ export function SettingsManagement({ initialSection }: SettingsManagementProps) 
                 <div className="space-y-2">
                   <Label>{t("settings.sessionTimeout", "Session timeout (minutes)")}</Label>
                   <Input type="number" {...systemForm.register("sessionTimeout", { valueAsNumber: true })} />
+                  {renderError(systemForm.formState.errors.sessionTimeout)}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label>{t("settings.maxLoginAttempts", "Max login attempts")}</Label>
                     <Input type="number" min={1} {...systemForm.register("maxLoginAttempts", { valueAsNumber: true })} />
+                    {renderError(systemForm.formState.errors.maxLoginAttempts)}
                   </div>
                   <div className="space-y-2">
                     <Label>{t("settings.dataRetentionDays", "Data retention (days)")}</Label>
                     <Input type="number" min={0} {...systemForm.register("dataRetentionDays", { valueAsNumber: true })} />
+                    {renderError(systemForm.formState.errors.dataRetentionDays)}
                   </div>
                   <div className="space-y-2">
                     <Label>{t("settings.backupFrequency", "Backup frequency")}</Label>
                     <Input {...systemForm.register("backupFrequency")} />
+                    {renderError(systemForm.formState.errors.backupFrequency)}
                   </div>
                   <div className="space-y-2">
                     <Label>{t("settings.timezone", "Timezone")}</Label>
                     <Input {...systemForm.register("timezone")} />
+                    {renderError(systemForm.formState.errors.timezone)}
                   </div>
                   <div className="space-y-2">
                     <Label>{t("settings.language", "Language")}</Label>
                     <Input {...systemForm.register("language")} />
+                    {renderError(systemForm.formState.errors.language)}
                   </div>
                   <div className="space-y-2">
                     <Label>{t("settings.currency", "Currency")}</Label>
                     <Input {...systemForm.register("currency")} />
+                    {renderError(systemForm.formState.errors.currency)}
                   </div>
                 </div>
                 <div className="flex justify-end">

@@ -955,14 +955,59 @@ function MobilePreview({ config, lang }: { config: MobileAppConfig; lang: "en" |
       id: tab.id ?? tab.screen ?? "tab",
       label: resolveLocalized(tab.label, lang, tab.id ?? tab.screen ?? ""),
     }));
+  const sections = (config.home?.sections ?? [])
+    .filter((section: any) => section.enabled !== false)
+    .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+  const support = config.content?.support ?? {};
+  const supportItems = [
+    { id: "phone", label: t("settings.mobileAppPhone", "Phone"), value: support.phone },
+    { id: "email", label: t("settings.mobileAppEmail", "Email"), value: support.email },
+    { id: "whatsapp", label: t("settings.mobileAppWhatsApp", "WhatsApp"), value: support.whatsapp },
+    { id: "website", label: t("settings.mobileAppWebsite", "Website"), value: support.websiteUrl },
+    {
+      id: "serviceArea",
+      label: t("settings.mobileAppServiceArea", "Service area"),
+      value: resolveLocalized(support.serviceArea, lang, ""),
+    },
+    {
+      id: "workingHours",
+      label: t("settings.mobileAppWorkingHours", "Working hours"),
+      value: resolveLocalized(support.workingHours, lang, ""),
+    },
+    {
+      id: "cityCoverage",
+      label: t("settings.mobileAppCityCoverage", "City coverage"),
+      value: resolveLocalized(support.cityCoverage, lang, ""),
+    },
+  ].filter((item) => item.value && String(item.value).trim().length > 0);
+  const theme = config.theme ?? {};
+  const colors = {
+    background: theme.background ?? "#f6f7f9",
+    surface: theme.surface ?? "#ffffff",
+    surfaceMuted: theme.surfaceMuted ?? "#fafafa",
+    text: theme.text ?? "#1a1a1a",
+    textMuted: theme.textMuted ?? theme.mutedForeground ?? "#667085",
+    border: theme.borderSoft ?? "rgba(0,0,0,0.08)",
+    borderStrong: theme.borderStrong ?? "rgba(0,0,0,0.12)",
+    primary: theme.primary ?? "#E53935",
+    accent: theme.accent ?? "#FF857A",
+  };
+  const colorChips = [
+    { id: "primary", label: t("settings.mobileAppPrimaryColor", "Primary color"), value: colors.primary },
+    { id: "accent", label: t("settings.mobileAppAccentColor", "Accent color"), value: colors.accent },
+    { id: "background", label: t("settings.mobileAppBackgroundColor", "Background color"), value: colors.background },
+    { id: "surface", label: t("settings.mobileAppSurfaceColor", "Surface color"), value: colors.surface },
+    { id: "text", label: t("settings.mobileAppTextColor", "Text color"), value: colors.text },
+  ];
 
   return (
     <div
-      className="rounded-3xl border overflow-hidden shadow-sm bg-white"
+      className="rounded-3xl border overflow-hidden shadow-sm"
       style={{
-        background: config.theme?.background || "#f6f7f9",
-        color: config.theme?.text || "#1a1a1a",
-        fontFamily: lang === "ar" ? config.theme?.fontArabic : config.theme?.fontBase,
+        background: colors.background,
+        borderColor: colors.borderStrong,
+        color: colors.text,
+        fontFamily: lang === "ar" ? theme.fontArabic : theme.fontBase,
       }}
       dir={lang === "ar" ? "rtl" : "ltr"}
     >
@@ -971,31 +1016,49 @@ function MobilePreview({ config, lang }: { config: MobileAppConfig; lang: "en" |
           {config.branding?.logoUrl ? (
             <img src={config.branding.logoUrl} alt={appName} className="w-10 h-10 rounded-xl object-cover" />
           ) : (
-            <div className="w-10 h-10 rounded-xl bg-white/80 border border-border" />
+            <div
+              className="w-10 h-10 rounded-xl"
+              style={{ background: colors.surfaceMuted, border: `1px solid ${colors.border}` }}
+            />
           )}
           <div>
-            <p className="text-xs text-muted-foreground">{t("settings.mobileAppAppName", "App name")}</p>
+            <p className="text-xs" style={{ color: colors.textMuted }}>
+              {t("settings.mobileAppAppName", "App name")}
+            </p>
             <p className="text-lg font-semibold">{appName}</p>
           </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {colorChips.map((chip) => (
+            <div
+              key={chip.id}
+              className="flex items-center gap-2 rounded-full px-2 py-1 text-[11px]"
+              style={{ background: colors.surfaceMuted, border: `1px solid ${colors.border}` }}
+            >
+              <span className="w-3 h-3 rounded-full" style={{ background: chip.value }} />
+              <span style={{ color: colors.textMuted }}>{chip.label}</span>
+            </div>
+          ))}
         </div>
         <div
           className="rounded-2xl p-4 space-y-2"
           style={{
             background:
-              config.theme?.heroGradient || "linear-gradient(135deg, rgba(229,57,53,0.16), rgba(255,133,122,0.12))",
+              theme.heroGradient || "linear-gradient(135deg, rgba(229,57,53,0.16), rgba(255,133,122,0.12))",
           }}
         >
-          {heroShowcase.prompt && <p className="text-xs text-muted-foreground">{heroShowcase.prompt}</p>}
+          {heroShowcase.prompt && <p className="text-xs" style={{ color: colors.textMuted }}>{heroShowcase.prompt}</p>}
           {heroShowcase.title && <h3 className="text-lg font-semibold">{heroShowcase.title}</h3>}
-          {heroShowcase.subtitle && <p className="text-sm text-muted-foreground">{heroShowcase.subtitle}</p>}
+          {heroShowcase.subtitle && <p className="text-sm" style={{ color: colors.textMuted }}>{heroShowcase.subtitle}</p>}
           {pills.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {pills.map((pill, index) => (
                 <span
                   key={`${pill.label}-${index}`}
-                  className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs bg-white/70 border border-border"
+                  className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs"
+                  style={{ background: colors.surfaceMuted, border: `1px solid ${colors.border}` }}
                 >
-                  <span className="w-2 h-2 rounded-full" style={{ background: config.theme?.primary || "#E53935" }} />
+                  <span className="w-2 h-2 rounded-full" style={{ background: colors.primary }} />
                   {pill.label || pill.icon}
                 </span>
               ))}
@@ -1003,23 +1066,64 @@ function MobilePreview({ config, lang }: { config: MobileAppConfig; lang: "en" |
           )}
         </div>
         {promos.length > 0 && (
-          <div className="rounded-2xl overflow-hidden border border-border bg-white">
+          <div className="rounded-2xl overflow-hidden border" style={{ borderColor: colors.border, background: colors.surface }}>
             {promos[0].imageUrl ? (
               <img src={promos[0].imageUrl} alt="promo" className="w-full h-24 object-cover" />
             ) : (
-              <div className="w-full h-24 bg-muted" />
+              <div className="w-full h-24" style={{ background: colors.surfaceMuted }} />
             )}
             <div className="p-3">
               <p className="font-semibold">{resolveLocalized(promos[0].title, lang, "") || t("settings.mobileAppTitle", "Title")}</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs" style={{ color: colors.textMuted }}>
                 {resolveLocalized(promos[0].subtitle, lang, "") || t("settings.mobileAppSubtitle", "Subtitle")}
               </p>
             </div>
           </div>
         )}
+        <div className="rounded-2xl border p-3 space-y-2" style={{ background: colors.surface, borderColor: colors.border }}>
+          <p className="text-xs" style={{ color: colors.textMuted }}>
+            {t("settings.mobileAppSections", "Sections")}
+          </p>
+          {sections.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {sections.map((section: any, index: number) => {
+                const title = resolveLocalized(section.title, lang, "");
+                return (
+                  <span
+                    key={`${section.id ?? section.type ?? "section"}-${index}`}
+                    className="rounded-full px-2 py-1 text-[11px]"
+                    style={{ background: colors.surfaceMuted, border: `1px solid ${colors.border}` }}
+                  >
+                    {t(`settings.mobileAppSectionTypes.${section.type}`, section.type ?? "section")}
+                    {title ? ` - ${title}` : ""}
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs" style={{ color: colors.textMuted }}>
+              {t("common.not_available", "N/A")}
+            </p>
+          )}
+        </div>
+        {supportItems.length > 0 && (
+          <div className="rounded-2xl border p-3 space-y-2" style={{ background: colors.surface, borderColor: colors.border }}>
+            <p className="text-xs" style={{ color: colors.textMuted }}>
+              {t("settings.mobileAppSupport", "Support")}
+            </p>
+            <div className="space-y-1 text-[11px]">
+              {supportItems.slice(0, 4).map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-2">
+                  <span style={{ color: colors.textMuted }}>{item.label}</span>
+                  <span className="truncate" style={{ color: colors.text }}>{item.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-      <div className="border-t bg-white/95 px-3 py-2">
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+      <div className="border-t px-3 py-2" style={{ borderColor: colors.border, background: colors.surface }}>
+        <div className="flex items-center justify-between text-[11px]" style={{ color: colors.textMuted }}>
           {tabs.length > 0
             ? tabs.map((tab) => (
                 <div key={tab.id} className="flex-1 text-center truncate">
