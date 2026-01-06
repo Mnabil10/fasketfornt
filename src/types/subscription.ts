@@ -21,6 +21,7 @@ export type ProviderSubscription = Timestamped & {
   providerId: string;
   planId: string;
   status: SubscriptionStatus;
+  commissionRateBpsOverride?: number | null;
   currentPeriodStart?: string | null;
   currentPeriodEnd?: string | null;
   trialEndsAt?: string | null;
@@ -42,6 +43,7 @@ export type SubscriptionUpsertInput = {
   providerId: string;
   planId: string;
   status?: SubscriptionStatus;
+  commissionRateBpsOverride?: number | null;
   currentPeriodStart?: string;
   currentPeriodEnd?: string;
   trialEndsAt?: string;

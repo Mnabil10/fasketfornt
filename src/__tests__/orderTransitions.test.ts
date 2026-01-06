@@ -5,12 +5,12 @@ import type { OrderTransition } from "../types/order";
 describe("order transitions helper", () => {
   it("prefers backend allowed transitions", () => {
     const transitions: OrderTransition[] = [
-      { from: "PENDING", to: "PROCESSING" },
-      { from: "PROCESSING", to: "OUT_FOR_DELIVERY" },
+      { from: "PENDING", to: "CONFIRMED" },
+      { from: "CONFIRMED", to: "PREPARING" },
     ];
-    const allowed = collectAllowedTargets(["PROCESSING"], transitions);
-    expect(allowed).toContain("OUT_FOR_DELIVERY");
+    const allowed = collectAllowedTargets(["CONFIRMED"], transitions);
+    expect(allowed).toContain("PREPARING");
     expect(isTransitionAllowed("DELIVERED", allowed)).toBe(false);
-    expect(isTransitionAllowed("PROCESSING", allowed)).toBe(true);
+    expect(isTransitionAllowed("CONFIRMED", allowed)).toBe(true);
   });
 });

@@ -55,6 +55,9 @@
   "errors": {
     "DEFAULT": "Something went wrong. Please try again.",
     "ORDER_NOT_FOUND": "Order not found.",
+    "ORDER_INVALID_STATUS_TRANSITION": "Order cannot move to that status.",
+    "ORDER_ALREADY_COMPLETED": "Order is already completed.",
+    "ORDER_UNAUTHORIZED": "You do not have access to this order.",
     "ADDRESS_INVALID_ZONE": "Address is outside of supported delivery zones.",
     "DRIVER_NOT_FOUND": "Driver not found.",
     "DRIVER_INACTIVE": "Driver is inactive.",
@@ -63,6 +66,7 @@
     "LOYALTY_NOT_ENOUGH_POINTS": "Customer does not have enough points.",
     "LOYALTY_RULE_VIOLATION": "This action violates the loyalty rules.",
     "SETTING_NOT_CONFIGURED": "This setting is not configured yet.",
+    "SETTINGS_NOT_FOUND": "This setting is not configured yet.",
     "VALIDATION_FAILED": "Some fields are invalid. Please review your input.",
     "INTERNAL_ERROR": "Internal error. Please try again or contact support.",
     "RATE_LIMITED": "Too many requests. Please slow down and try again.",
@@ -347,8 +351,9 @@
     "noteHint": "Hint: Press Ctrl+Enter to save note with current status",
     "statuses": {
       "PENDING": "Pending",
-      "PROCESSING": "Processing",
-      "OUT_FOR_DELIVERY": "Out for Delivery",
+      "CONFIRMED": "Confirmed",
+      "PREPARING": "Preparing",
+      "OUT_FOR_DELIVERY": "Out for delivery",
       "DELIVERED": "Delivered",
       "CANCELED": "Canceled",
       "ALL": "All statuses"
@@ -399,9 +404,10 @@
     "history_error": "Unable to load history",
     "lookup_failed": "Lookup failed",
     "lookup_not_found": "No order found",
+    "markConfirmed": "Mark confirmed",
     "markDelivered": "Mark delivered",
     "markOutForDelivery": "Out for delivery",
-    "markProcessing": "Mark processing",
+    "markPreparing": "Mark preparing",
     "no_automation": "No automation events found",
     "no_history": "No history yet",
     "permission": {
@@ -730,7 +736,8 @@
     "billing": "Billing",
     "automation-outbox": "Automation Outbox",
     "reports": "Profit Reports",
-    "support": "Support"
+    "support": "Support",
+    "provider-applications": "Provider Applications"
   },
   "common": {
     "app_name": "Fasket",
@@ -936,7 +943,7 @@
     "thresholds_missing": "No thresholds configured",
     "try_filters": "Try clearing filters or waiting for new events",
     "type_hint": "No events loaded yet; showing common types",
-    "watcher_disabled_hint": "Watcher disabled—stuck orders alerts will not fire."
+    "watcher_disabled_hint": "Watcher disabled - stuck orders alerts will not fire."
   },
   "reports": {
     "cogs": "COGS",
@@ -1138,6 +1145,7 @@
     "statuses": {
       "PENDING": "Pending",
       "ACTIVE": "Active",
+      "REJECTED": "Rejected",
       "SUSPENDED": "Suspended",
       "DISABLED": "Disabled"
     },
@@ -1160,5 +1168,57 @@
     "nameAr": "Name (AR)",
     "ratePerKm": "Rate per km (currency)",
     "saveFailed": "Unable to save provider"
+  },
+  "providerApplications": {
+    "title": "Provider Applications",
+    "subtitle": "Review and onboard new providers",
+    "businessName": "Business name",
+    "owner": "Owner",
+    "phone": "Phone",
+    "email": "Email",
+    "type": "Type",
+    "status": "Status",
+    "city": "City",
+    "region": "Region",
+    "deliveryMode": "Delivery mode",
+    "notes": "Notes",
+    "createdAt": "Created",
+    "reviewedAt": "Reviewed",
+    "actions": "Actions",
+    "approve": "Approve",
+    "reject": "Reject",
+    "approveTitle": "Approve application",
+    "rejectTitle": "Reject application",
+    "approveConfirm": "Approve and onboard",
+    "rejectConfirm": "Reject application",
+    "plan": "Plan",
+    "planPlaceholder": "Select plan",
+    "commissionOverride": "Commission override (%)",
+    "branchTitle": "Branch setup",
+    "branchName": "Branch name",
+    "branchCity": "Branch city",
+    "branchRegion": "Branch region",
+    "branchAddress": "Branch address",
+    "deliveryRadiusKm": "Delivery radius (km)",
+    "ratePerKm": "Rate per km",
+    "minFee": "Min delivery fee",
+    "maxFee": "Max delivery fee",
+    "rejectionReason": "Rejection reason",
+    "emptyTitle": "No applications found",
+    "emptyDesc": "No provider applications match your filters.",
+    "loadError": "Unable to load applications",
+    "approved": "Application approved",
+    "rejected": "Application rejected",
+    "filters": {
+      "status": "Status",
+      "type": "Type",
+      "city": "City",
+      "search": "Search by business, owner, phone"
+    },
+    "statuses": {
+      "PENDING": "Pending",
+      "APPROVED": "Approved",
+      "REJECTED": "Rejected"
+    }
   }
 }

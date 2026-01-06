@@ -1,7 +1,7 @@
 import type { PaginatedQuery, PagedResponse, Timestamped } from "./common";
 
 export type ProviderType = "SUPERMARKET" | "PHARMACY" | "RESTAURANT" | "SERVICE" | "OTHER";
-export type ProviderStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | "DISABLED";
+export type ProviderStatus = "PENDING" | "ACTIVE" | "REJECTED" | "SUSPENDED" | "DISABLED";
 export type DeliveryMode = "PLATFORM" | "MERCHANT";
 
 export type Provider = Timestamped & {

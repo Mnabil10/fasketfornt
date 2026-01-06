@@ -208,7 +208,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     overscan: 6,
   });
 
-  const baseStatuses: OrderStatus[] = ["PENDING", "PROCESSING", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELED"];
+  const baseStatuses: OrderStatus[] = ["PENDING", "CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELED"];
   const statusFilterOptions = baseStatuses;
   const allowedTargets = useMemo(
     () => collectAllowedTargets(detailQuery.data?.allowedTransitions, transitionsQuery.data as OrderTransition[] | undefined),
@@ -234,7 +234,8 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   const statusBadge = (status: OrderStatus) => {
     const map: Record<OrderStatus, { color: string; label: string }> = {
       PENDING: { color: "bg-yellow-100 text-yellow-800", label: t("orders.statuses.PENDING", "Pending") },
-      PROCESSING: { color: "bg-blue-100 text-blue-800", label: t("orders.statuses.PROCESSING", "Processing") },
+      CONFIRMED: { color: "bg-blue-100 text-blue-800", label: t("orders.statuses.CONFIRMED", "Confirmed") },
+      PREPARING: { color: "bg-amber-100 text-amber-800", label: t("orders.statuses.PREPARING", "Preparing") },
       OUT_FOR_DELIVERY: {
         color: "bg-purple-100 text-purple-800",
         label: t("orders.statuses.OUT_FOR_DELIVERY", "Out for delivery"),

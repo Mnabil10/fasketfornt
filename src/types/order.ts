@@ -2,7 +2,14 @@ import type { DeliveryDriver } from "./delivery";
 import type { DeliveryZone } from "./zones";
 import type { PaginatedResponse, PaginatedQuery } from "./common";
 
-export type OrderStatus = "PENDING" | "PROCESSING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "CANCELED" | (string & {});
+export type OrderStatus =
+  | "PENDING"
+  | "CONFIRMED"
+  | "PREPARING"
+  | "OUT_FOR_DELIVERY"
+  | "DELIVERED"
+  | "CANCELED"
+  | (string & {});
 
 export type OrderCustomer = {
   id: string;

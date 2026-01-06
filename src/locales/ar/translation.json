@@ -55,6 +55,9 @@
   "errors": {
     "DEFAULT": "حدث خطأ ما. يرجى المحاولة مرة أخرى.",
     "ORDER_NOT_FOUND": "لم يتم العثور على الطلب.",
+    "ORDER_INVALID_STATUS_TRANSITION": "لا يمكن تغيير حالة الطلب.",
+    "ORDER_ALREADY_COMPLETED": "تم إكمال الطلب بالفعل.",
+    "ORDER_UNAUTHORIZED": "ليس لديك صلاحية للوصول إلى هذا الطلب.",
     "ADDRESS_INVALID_ZONE": "العنوان خارج نطاق مناطق التوصيل.",
     "DRIVER_NOT_FOUND": "السائق غير موجود.",
     "DRIVER_INACTIVE": "السائق غير نشط.",
@@ -66,6 +69,7 @@
     "RATE_LIMITED": "طلبات عديدة جدًا، يرجى المحاولة لاحقًا.",
     "UNAUTHORIZED": "ليست لديك صلاحية لتنفيذ هذا الإجراء.",
     "SETTING_NOT_CONFIGURED": "هذا الإعداد غير مهيأ بعد.",
+    "SETTINGS_NOT_FOUND": "الإعدادات غير مهيأة بعد.",
     "INTERNAL_ERROR": "حدث خطأ داخلي غير متوقع. يرجى المحاولة مرة أخرى.",
     "INVALID_CREDENTIALS": "بيانات تسجيل الدخول غير صحيحة."
   },
@@ -216,7 +220,8 @@
     },
     "statuses": {
       "DRAFT": "مسودة",
-      "ACTIVE": "مفعل",
+      "ACTIVE": "???",
+      "REJECTED": "?????",
       "HIDDEN": "مخفي",
       "DISCONTINUED": "متوقف",
       "ALL": "كل الحالات"
@@ -347,7 +352,8 @@
     "noteHint": "ملاحظة: اضغط Ctrl+Enter لحفظ الملاحظة مع الحالة الحالية",
     "statuses": {
       "PENDING": "قيد الانتظار",
-      "PROCESSING": "قيد المعالجة",
+      "CONFIRMED": "?? ???????",
+      "PREPARING": "??? ???????",
       "OUT_FOR_DELIVERY": "خرج للتسليم",
       "DELIVERED": "تم التسليم",
       "CANCELED": "أُلغي",
@@ -401,7 +407,8 @@
     "lookup_not_found": "لا توجد نتائج مطابقة",
     "markDelivered": "وضع علامة: تم التسليم",
     "markOutForDelivery": "وضع علامة: خرج للتسليم",
-    "markProcessing": "وضع علامة: قيد المعالجة",
+    "markConfirmed": "??? ?????: ?? ???????",
+    "markPreparing": "??? ?????: ??? ???????",
     "no_automation": "لا توجد أحداث أتمتة",
     "no_history": "لا يوجد سجل حالة",
     "permission": {
@@ -730,7 +737,8 @@
     "billing": "الفوترة",
     "automation-outbox": "صندوق الأتمتة",
     "reports": "تقارير الأرباح",
-    "support": "الدعم"
+    "support": "الدعم",
+    "provider-applications": "طلبات المزوّدين"
   },
   "common": {
     "app_name": "فاسكت",
@@ -1139,7 +1147,8 @@
       "PENDING": "قيد الانتظار",
       "ACTIVE": "نشط",
       "SUSPENDED": "معلق",
-      "DISABLED": "معطّل"
+      "DISABLED": "معطّل",
+      "REJECTED": "مرفوض"
     },
     "slug": "المعرّف",
     "search": "ابحث عن مزوّد",
@@ -1160,5 +1169,57 @@
     "nameAr": "الاسم (عربي)",
     "ratePerKm": "السعر لكل كم (بالعملة)",
     "saveFailed": "تعذر حفظ المزوّد"
+  },
+  "providerApplications": {
+    "title": "طلبات المزوّدين",
+    "subtitle": "إدارة طلبات المزوّدين",
+    "businessName": "اسم المتجر",
+    "owner": "المالك",
+    "phone": "رقم الهاتف",
+    "email": "البريد الإلكتروني",
+    "type": "النوع",
+    "status": "الحالة",
+    "city": "المدينة",
+    "region": "المنطقة",
+    "deliveryMode": "نظام التوصيل",
+    "notes": "ملاحظات",
+    "createdAt": "تاريخ الإنشاء",
+    "reviewedAt": "تاريخ المراجعة",
+    "actions": "الإجراءات",
+    "approve": "موافقة",
+    "reject": "رفض",
+    "approveTitle": "موافقة على الطلب",
+    "rejectTitle": "رفض الطلب",
+    "approveConfirm": "تفعيل المزوّد",
+    "rejectConfirm": "رفض الطلب",
+    "plan": "الخطة",
+    "planPlaceholder": "اختر خطة",
+    "commissionOverride": "تعديل العمولة (%)",
+    "branchTitle": "تفاصيل الفرع",
+    "branchName": "اسم الفرع",
+    "branchCity": "مدينة الفرع",
+    "branchRegion": "منطقة الفرع",
+    "branchAddress": "عنوان الفرع",
+    "deliveryRadiusKm": "نطاق التوصيل (كم)",
+    "ratePerKm": "السعر لكل كم (بالعملة)",
+    "minFee": "أقل رسوم توصيل (بالعملة)",
+    "maxFee": "أقصى رسوم توصيل (بالعملة)",
+    "rejectionReason": "سبب الرفض",
+    "emptyTitle": "لا توجد طلبات",
+    "emptyDesc": "جرّب تعديل المرشحات أو البحث.",
+    "loadError": "تعذر تحميل الطلبات",
+    "approved": "تمت الموافقة على الطلب",
+    "rejected": "تم رفض الطلب",
+    "filters": {
+      "status": "الحالة",
+      "type": "النوع",
+      "city": "المدينة",
+      "search": "ابحث بالاسم أو الرقم..."
+    },
+    "statuses": {
+      "PENDING": "قيد الانتظار",
+      "APPROVED": "تمت الموافقة",
+      "REJECTED": "مرفوض"
+    }
   }
 }

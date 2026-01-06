@@ -21,7 +21,8 @@ import { useDebounce } from "../../../hooks/useDebounce";
 
 const STATUS_COLORS: Record<OrderStatus, Parameters<typeof FasketBadge>[0]["tone"]> = {
   PENDING: "warning",
-  PROCESSING: "info",
+  CONFIRMED: "info",
+  PREPARING: "warning",
   OUT_FOR_DELIVERY: "info",
   DELIVERED: "success",
   CANCELED: "danger",
@@ -154,9 +155,17 @@ export function FasketOrders({ initialOrderId }: OrdersProps) {
                   size="sm"
                   variant="ghost"
                   loading={statusMutation.isPending}
-                  onClick={() => handleStatusChange(row.id, "PROCESSING")}
+                  onClick={() => handleStatusChange(row.id, "CONFIRMED")}
                 >
-                  {t("orders.markProcessing", "Mark processing")}
+                  {t("orders.markConfirmed", "Mark confirmed")}
+                </FasketButton>
+                <FasketButton
+                  size="sm"
+                  variant="ghost"
+                  loading={statusMutation.isPending}
+                  onClick={() => handleStatusChange(row.id, "PREPARING")}
+                >
+                  {t("orders.markPreparing", "Mark preparing")}
                 </FasketButton>
                 <FasketButton
                   size="sm"
@@ -229,7 +238,8 @@ export function FasketOrders({ initialOrderId }: OrdersProps) {
               <SelectContent>
                 <SelectItem value="all">{t("orders.statuses.ALL", "All statuses")}</SelectItem>
                 <SelectItem value="PENDING">{t("orders.statuses.PENDING", "Pending")}</SelectItem>
-                <SelectItem value="PROCESSING">{t("orders.statuses.PROCESSING", "Processing")}</SelectItem>
+                <SelectItem value="CONFIRMED">{t("orders.statuses.CONFIRMED", "Confirmed")}</SelectItem>
+                <SelectItem value="PREPARING">{t("orders.statuses.PREPARING", "Preparing")}</SelectItem>
                 <SelectItem value="OUT_FOR_DELIVERY">{t("orders.statuses.OUT_FOR_DELIVERY", "Out for delivery")}</SelectItem>
                 <SelectItem value="DELIVERED">{t("orders.statuses.DELIVERED", "Delivered")}</SelectItem>
                 <SelectItem value="CANCELED">{t("orders.statuses.CANCELED", "Canceled")}</SelectItem>

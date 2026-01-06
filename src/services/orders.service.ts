@@ -353,6 +353,20 @@ export async function getOrder(id: string): Promise<OrderDetail> {
 }
 
 export async function updateOrderStatus(id: string, body: OrderStatusPayload) {
+  const payload = body.note ? { note: body.note } : {};
+  const status = body.to;
+  const actionMap: Record<string, string> = {
+    CONFIRMED: "confirm",
+    PREPARING: "prepare",
+    OUT_FOR_DELIVERY: "out-for-delivery",
+    DELIVERED: "deliver",
+    CANCELED: "cancel",
+  };
+  const action = actionMap[status];
+  if (action) {
+    const { data } = await api.post<{ ok: true }>(`/api/v1/admin/orders/${id}/${action}`, payload);
+    return data;
+  }
   const { data } = await api.patch<{ ok: true }>(`/api/v1/admin/orders/${id}/status`, body);
   return data;
 }

@@ -38,7 +38,7 @@ const providerSchema = z.object({
   nameAr: z.string().optional(),
   slug: z.string().optional(),
   type: z.enum(["SUPERMARKET", "PHARMACY", "RESTAURANT", "SERVICE", "OTHER"]),
-  status: z.enum(["PENDING", "ACTIVE", "SUSPENDED", "DISABLED"]),
+  status: z.enum(["PENDING", "ACTIVE", "REJECTED", "SUSPENDED", "DISABLED"]),
   deliveryMode: z.enum(["PLATFORM", "MERCHANT"]).optional(),
   deliveryRatePerKm: optionalNumber,
   minDeliveryFee: optionalNumber,
@@ -300,7 +300,7 @@ export function ProvidersManagement() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {["PENDING", "ACTIVE", "SUSPENDED", "DISABLED"].map((item) => (
+                        {["PENDING", "ACTIVE", "REJECTED", "SUSPENDED", "DISABLED"].map((item) => (
                           <SelectItem key={item} value={item}>
                             {resolveStatusLabel(item as ProviderStatus)}
                           </SelectItem>
@@ -433,7 +433,7 @@ export function ProvidersManagement() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t("common.all", "All")}</SelectItem>
-                {["PENDING", "ACTIVE", "SUSPENDED", "DISABLED"].map((item) => (
+                {["PENDING", "ACTIVE", "REJECTED", "SUSPENDED", "DISABLED"].map((item) => (
                   <SelectItem key={item} value={item}>
                     {resolveStatusLabel(item as ProviderStatus)}
                   </SelectItem>

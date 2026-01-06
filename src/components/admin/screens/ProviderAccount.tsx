@@ -11,6 +11,7 @@ import { ErrorState } from "../common/ErrorState";
 const statusTone: Record<string, string> = {
   ACTIVE: "bg-emerald-100 text-emerald-700",
   PENDING: "bg-amber-100 text-amber-700",
+  REJECTED: "bg-red-100 text-red-700",
   SUSPENDED: "bg-rose-100 text-rose-700",
   DISABLED: "bg-gray-200 text-gray-700",
 };

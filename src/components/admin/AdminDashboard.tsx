@@ -36,6 +36,8 @@ import {
   MapPin,
   CreditCard,
   Megaphone,
+  Star,
+  ClipboardList,
 } from "lucide-react";
 const DashboardOverview = React.lazy(() =>
   import("./screens/DashboardOverview").then((m) => ({ default: m.DashboardOverview }))
@@ -60,6 +62,8 @@ import { BranchesManagement } from "./screens/BranchesManagement";
 import { BillingManagement } from "./screens/BillingManagement";
 import { CampaignsManagement } from "./screens/CampaignsManagement";
 import { ProviderAccount } from "./screens/ProviderAccount";
+import { ReviewsManagement } from "./screens/ReviewsManagement";
+import { ProviderApplicationsManagement } from "./screens/ProviderApplicationsManagement";
 import { useTranslation } from "react-i18next";
 import BrandLogo from "../common/BrandLogo";
 import { fetchDashboard, type DashboardSummary } from "../../services/dashboard.service";
@@ -74,6 +78,7 @@ import { getAdminErrorMessage } from "../../lib/errors";
 export type AdminScreen =
   | "dashboard"
   | "providers"
+  | "provider-applications"
   | "branches"
   | "categories"
   | "products"
@@ -88,6 +93,7 @@ export type AdminScreen =
   | "automation-outbox"
   | "reports"
   | "support"
+  | "reviews"
   | "provider-account";
 
 export interface AdminState {
@@ -120,7 +126,7 @@ export function AdminDashboard() {
   const pathSegments = useMemo(() => location.pathname.replace(/^\/+/, "").split("/").filter(Boolean), [location.pathname]);
   const derivedScreen: AdminScreen =
     (pathSegments[0] as AdminScreen | undefined) &&
-    (["dashboard", "providers", "branches", "categories", "products", "hot-offers", "orders", "customers", "coupons", "billing", "campaigns", "settings", "delivery-drivers", "automation-outbox", "reports", "support", "provider-account"] as const).includes(
+    (["dashboard", "providers", "provider-applications", "branches", "categories", "products", "hot-offers", "orders", "customers", "coupons", "billing", "campaigns", "settings", "delivery-drivers", "automation-outbox", "reports", "support", "reviews", "provider-account"] as const).includes(
       pathSegments[0] as AdminScreen
     )
       ? (pathSegments[0] as AdminScreen)
@@ -151,6 +157,7 @@ export function AdminDashboard() {
     const adminExtras: AdminScreen[] = [
       "dashboard",
       "providers",
+      "provider-applications",
       "branches",
       "customers",
       "billing",
@@ -158,6 +165,7 @@ export function AdminDashboard() {
       "campaigns",
       "settings",
       "delivery-drivers",
+      "reviews",
     ];
     const automationScreens: AdminScreen[] = perms.canViewAutomation ? ["automation-outbox"] : [];
     const profitScreens: AdminScreen[] = perms.canViewProfit ? ["reports"] : [];
@@ -262,6 +270,7 @@ export function AdminDashboard() {
     const all = [
       { id: "dashboard" as const, icon: LayoutDashboard, badge: null },
       { id: "providers" as const, icon: Store, badge: null },
+      { id: "provider-applications" as const, icon: ClipboardList, badge: null },
       { id: "branches" as const, icon: MapPin, badge: null },
       { id: "categories" as const, icon: Grid3x3, badge: null },
       { id: "products" as const, icon: Package, badge: lowStockCount && lowStockCount > 0 ? lowStockCount : null },
@@ -269,6 +278,7 @@ export function AdminDashboard() {
       { id: "orders" as const, icon: ShoppingCart, badge: ordersCount },
       { id: "delivery-drivers" as const, icon: Truck, badge: null },
       { id: "customers" as const, icon: Users, badge: customersCount },
+      { id: "reviews" as const, icon: Star, badge: null },
       { id: "billing" as const, icon: CreditCard, badge: null },
       { id: "coupons" as const, icon: Ticket, badge: null },
       { id: "campaigns" as const, icon: Megaphone, badge: null },
@@ -284,6 +294,7 @@ export function AdminDashboard() {
   const defaultLabels: Record<AdminScreen, string> = {
     dashboard: "Dashboard",
     providers: "Providers",
+    "provider-applications": "Provider Applications",
     branches: "Branches",
     categories: "Categories",
     products: "Products",
@@ -298,6 +309,7 @@ export function AdminDashboard() {
     "automation-outbox": "Automation Outbox",
     reports: "Profit Reports",
     support: "Support",
+    reviews: "Reviews",
     "provider-account": "Account",
   };
 
@@ -395,6 +407,8 @@ export function AdminDashboard() {
         );
       case "providers":
         return <ProvidersManagement />;
+      case "provider-applications":
+        return <ProviderApplicationsManagement />;
       case "branches":
         return <BranchesManagement />;
       case "categories":
@@ -445,6 +459,8 @@ export function AdminDashboard() {
             <SupportQueriesPage />
           </RequireCapability>
         );
+      case "reviews":
+        return <ReviewsManagement />;
       case "provider-account":
         return <ProviderAccount />;
       default:
