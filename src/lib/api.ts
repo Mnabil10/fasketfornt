@@ -127,7 +127,7 @@ api.interceptors.response.use(
     const status = err.response?.status;
     const original = (err.config || {}) as RetryableConfig;
     const originalUrl = typeof original.url === "string" ? original.url : "";
-    const isAuthEndpoint = /\/auth\/(login|register|signup)/.test(originalUrl);
+    const isAuthEndpoint = /\/auth\/(login|login-otp|request-otp|verify-otp|register|signup)/.test(originalUrl);
 
     if (err.response?.data) {
       const normalized = normalizeErrorResponse(err.response.data);

@@ -86,6 +86,8 @@ export type OrderFilters = PaginatedQuery & {
   minTotalCents?: number;
   maxTotalCents?: number;
   driverId?: string;
+  hasDriver?: boolean;
+  providerId?: string;
 };
 
 export type OrderStatusPayload = {

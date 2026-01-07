@@ -38,6 +38,7 @@ import {
   Megaphone,
   Star,
   ClipboardList,
+  Wallet,
 } from "lucide-react";
 const DashboardOverview = React.lazy(() =>
   import("./screens/DashboardOverview").then((m) => ({ default: m.DashboardOverview }))
@@ -45,9 +46,25 @@ const DashboardOverview = React.lazy(() =>
 const ProductsManagement = React.lazy(() =>
   import("./screens/ProductsManagement").then((m) => ({ default: m.ProductsManagement }))
 );
+const VendorDashboard = React.lazy(() =>
+  import("../vendor/VendorDashboard").then((m) => ({ default: m.VendorDashboard }))
+);
+const VendorEarnings = React.lazy(() =>
+  import("../vendor/VendorEarnings").then((m) => ({ default: m.VendorEarnings }))
+);
+const VendorReviews = React.lazy(() =>
+  import("../vendor/VendorReviews").then((m) => ({ default: m.VendorReviews }))
+);
+const VendorSettings = React.lazy(() =>
+  import("../vendor/VendorSettings").then((m) => ({ default: m.VendorSettings }))
+);
+const FinanceManagement = React.lazy(() =>
+  import("./screens/FinanceManagement").then((m) => ({ default: m.FinanceManagement }))
+);
 import { CategoriesManagement } from "./screens/CategoriesManagement";
 import { FasketProducts } from "./screens/FasketProducts";
 import { OrdersManagement } from "./screens/OrdersManagement";
+import { DriverOrders } from "./screens/DriverOrders";
 import { SettingsManagement } from "./screens/SettingsManagement";
 import { CouponsManagement } from "./screens/CouponsManagement";
 import { HotOffersList } from "./screens/HotOffers";
@@ -77,6 +94,7 @@ import { getAdminErrorMessage } from "../../lib/errors";
 
 export type AdminScreen =
   | "dashboard"
+  | "earnings"
   | "providers"
   | "provider-applications"
   | "branches"
@@ -94,6 +112,7 @@ export type AdminScreen =
   | "reports"
   | "support"
   | "reviews"
+  | "driver-orders"
   | "provider-account";
 
 export interface AdminState {
@@ -111,22 +130,27 @@ export type ScreenProps = {
 
 export function AdminDashboard() {
   const { t, i18n } = useTranslation();
-  const { user, isAdmin, isProvider, signOut } = useAuth();
+  const { user, isAdmin, isFinance, isProvider, isDriver, signOut } = useAuth();
   const perms = usePermissions();
   useDirection();
   const location = useLocation();
   const navigate = useNavigate();
+  const isLimitedUser = isProvider || isDriver;
   const defaultScreen: AdminScreen = isAdmin
     ? "dashboard"
+    : isDriver
+      ? "driver-orders"
     : isProvider
-      ? "orders"
+      ? "dashboard"
+    : isFinance
+      ? "earnings"
       : perms.canViewProfit
         ? "reports"
         : "products";
   const pathSegments = useMemo(() => location.pathname.replace(/^\/+/, "").split("/").filter(Boolean), [location.pathname]);
   const derivedScreen: AdminScreen =
     (pathSegments[0] as AdminScreen | undefined) &&
-    (["dashboard", "providers", "provider-applications", "branches", "categories", "products", "hot-offers", "orders", "customers", "coupons", "billing", "campaigns", "settings", "delivery-drivers", "automation-outbox", "reports", "support", "reviews", "provider-account"] as const).includes(
+    (["dashboard", "earnings", "providers", "provider-applications", "branches", "categories", "products", "hot-offers", "orders", "customers", "coupons", "billing", "campaigns", "settings", "delivery-drivers", "automation-outbox", "reports", "support", "reviews", "driver-orders", "provider-account"] as const).includes(
       pathSegments[0] as AdminScreen
     )
       ? (pathSegments[0] as AdminScreen)
@@ -156,6 +180,7 @@ export function AdminDashboard() {
     const base: AdminScreen[] = ["categories", "products", "hot-offers", "orders"];
     const adminExtras: AdminScreen[] = [
       "dashboard",
+      "earnings",
       "providers",
       "provider-applications",
       "branches",
@@ -172,8 +197,9 @@ export function AdminDashboard() {
     const supportScreens: AdminScreen[] = perms.canViewSupport ? ["support"] : [];
     if (role === "ADMIN") return [...base, ...adminExtras, ...automationScreens, ...profitScreens, ...supportScreens];
     if (role === "OPS_MANAGER") return [...base, "dashboard", ...automationScreens, ...supportScreens];
-    if (role === "FINANCE") return ["dashboard", ...profitScreens];
-    if (role === "PROVIDER") return [...base, "provider-account"];
+    if (role === "FINANCE") return ["dashboard", "earnings", ...profitScreens];
+    if (role === "PROVIDER") return ["dashboard", "products", "orders", "earnings", "reviews", "settings"];
+    if (role === "DRIVER") return ["driver-orders"];
     return [...base, ...automationScreens, ...profitScreens, ...supportScreens];
   }, [role, perms.canViewAutomation, perms.canViewProfit, perms.canViewSupport]);
 
@@ -276,6 +302,8 @@ export function AdminDashboard() {
       { id: "products" as const, icon: Package, badge: lowStockCount && lowStockCount > 0 ? lowStockCount : null },
       { id: "hot-offers" as const, icon: Flame, badge: null },
       { id: "orders" as const, icon: ShoppingCart, badge: ordersCount },
+      { id: "earnings" as const, icon: Wallet, badge: null },
+      { id: "driver-orders" as const, icon: ClipboardList, badge: null },
       { id: "delivery-drivers" as const, icon: Truck, badge: null },
       { id: "customers" as const, icon: Users, badge: customersCount },
       { id: "reviews" as const, icon: Star, badge: null },
@@ -293,6 +321,7 @@ export function AdminDashboard() {
 
   const defaultLabels: Record<AdminScreen, string> = {
     dashboard: "Dashboard",
+    earnings: "Earnings",
     providers: "Providers",
     "provider-applications": "Provider Applications",
     branches: "Branches",
@@ -300,6 +329,7 @@ export function AdminDashboard() {
     products: "Products",
     "hot-offers": "Hot Offers",
     orders: "Orders",
+    "driver-orders": "Driver Orders",
     customers: "Customers",
     coupons: "Coupons",
     billing: "Billing",
@@ -394,15 +424,15 @@ export function AdminDashboard() {
     const secondary = pathSegments[1];
     const tertiary = pathSegments[2];
 
-    if (derivedScreen === "settings" && secondary === "delivery-zones") {
+    if (derivedScreen === "settings" && secondary === "delivery-zones" && isAdmin) {
       return <DeliveryZonesManagement />;
     }
 
     switch (derivedScreen) {
       case "dashboard":
         return (
-          <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading…</div>}>
-            <DashboardOverview {...p} />
+          <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">{t("app.loading", "Loading...")}</div>}>
+            {isProvider ? <VendorDashboard /> : <DashboardOverview {...p} />}
           </React.Suspense>
         );
       case "providers":
@@ -429,6 +459,14 @@ export function AdminDashboard() {
         return <HotOffersList {...p} />;
       case "orders":
         return <OrdersManagement initialOrderId={secondary} />;
+      case "earnings":
+        return (
+          <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">{t("app.loading", "Loading...")}</div>}>
+            {isProvider ? <VendorEarnings /> : <FinanceManagement />}
+          </React.Suspense>
+        );
+      case "driver-orders":
+        return <DriverOrders />;
       case "customers":
         return <CustomersManagement />;
       case "billing":
@@ -438,6 +476,13 @@ export function AdminDashboard() {
       case "coupons":
         return <CouponsManagement {...p} />;
       case "settings":
+        if (isProvider) {
+          return (
+            <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">{t("app.loading", "Loading...")}</div>}>
+              <VendorSettings />
+            </React.Suspense>
+          );
+        }
         return <SettingsManagement {...p} initialSection={secondary} />;
       case "delivery-drivers":
         return <DeliveryDriversManagement />;
@@ -460,6 +505,13 @@ export function AdminDashboard() {
           </RequireCapability>
         );
       case "reviews":
+        if (isProvider) {
+          return (
+            <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">{t("app.loading", "Loading...")}</div>}>
+              <VendorReviews />
+            </React.Suspense>
+          );
+        }
         return <ReviewsManagement />;
       case "provider-account":
         return <ProviderAccount />;
@@ -510,7 +562,7 @@ export function AdminDashboard() {
                 } lg:gap-4 md:justify-end`}
               >
                 {/* Search */}
-                {!isProvider && (
+                {!isLimitedUser && (
                   <div className="relative hidden md:block">
                     <Search
                       className={`absolute ${
@@ -537,7 +589,7 @@ export function AdminDashboard() {
                 <LanguageSwitch />
 
                 {/* Notifications */}
-                {!isProvider && (
+                {!isLimitedUser && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" className="relative p-2">
@@ -636,3 +688,4 @@ export function AdminDashboard() {
     </SidebarProvider>
   );
 }
+

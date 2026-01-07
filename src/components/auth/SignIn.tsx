@@ -5,7 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { useTranslation } from "react-i18next";
-import { adminLogin } from "../../services/auth.service";
+import { adminLogin, loginOtp, requestLoginOtp } from "../../services/auth.service";
 import { useAuth } from "../../auth/AuthProvider";
 import { Link, useLocation, useNavigate, type Location } from "react-router-dom";
 import BrandLogo from "../common/BrandLogo";
@@ -34,6 +34,13 @@ const identifierSchema = z
   .refine((v) => isEmail(v) || /^(\+?\d{8,15})$/.test(cleanPhone(v)), { message: "validation.identifier" })
   .transform((v) => (isEmail(v) ? v.toLowerCase() : cleanPhone(v)));
 
+const phoneSchema = z
+  .string({ required_error: "validation.required" })
+  .transform((v) => normalizeDigits(v).trim())
+  .refine((v) => !!v, { message: "validation.required" })
+  .refine((v) => /^(\+?\d{8,15})$/.test(cleanPhone(v)), { message: "validation.phone" })
+  .transform((v) => cleanPhone(v));
+
 const passwordSchema = z
   .string({ required_error: "validation.required" })
   .min(8, { message: "validation.password" })
@@ -45,11 +52,21 @@ const otpSchema = z
   .transform((v) => (v ? v.trim() : ""))
   .refine((v) => v === "" || /^\d{4,8}$/.test(v), { message: "auth.invalid_otp" });
 
-const schema = z.object({
+const passwordLoginSchema = z.object({
+  mode: z.literal("password"),
   identifier: identifierSchema,
   password: passwordSchema,
   otp: otpSchema,
 });
+
+const otpLoginSchema = z.object({
+  mode: z.literal("otp"),
+  identifier: phoneSchema,
+  password: z.string().optional(),
+  otp: otpSchema,
+});
+
+const schema = z.discriminatedUnion("mode", [passwordLoginSchema, otpLoginSchema]);
 
 type FormValues = z.infer<typeof schema>;
 
@@ -63,7 +80,10 @@ export default function SignIn() {
 
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  const [requireOtp, setRequireOtp] = useState(false);
+  const [serverNotice, setServerNotice] = useState<string | null>(null);
+  const [requireTwoFactor, setRequireTwoFactor] = useState(false);
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
 
   const {
     register,
@@ -71,31 +91,89 @@ export default function SignIn() {
     formState: { errors },
     setValue,
     watch,
+    trigger,
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { identifier: "", password: "", otp: "" },
+    defaultValues: { mode: "password", identifier: "", password: "", otp: "" },
     mode: "onSubmit",
   });
+
+  const mode = watch("mode");
 
   const renderError = (message?: string) =>
     message ? <p className="text-xs text-red-600 mt-1">{t(message, { defaultValue: message })}</p> : null;
 
+  const setLoginMode = (next: "password" | "otp") => {
+    setValue("mode", next, { shouldValidate: true });
+    setValue("otp", "", { shouldValidate: false });
+    if (next === "otp") {
+      setValue("password", "", { shouldValidate: false });
+    }
+    setRequireTwoFactor(false);
+    setServerError(null);
+    setServerNotice(null);
+    setOtpSent(false);
+  };
+
+  const handleRequestOtp = async () => {
+    if (mode !== "otp") return;
+    setServerError(null);
+    setServerNotice(null);
+    const valid = await trigger("identifier");
+    if (!valid) return;
+    try {
+      setOtpSending(true);
+      const phone = watch("identifier");
+      await requestLoginOtp(String(phone));
+      setOtpSent(true);
+      setServerNotice(t("auth.otp_sent", "OTP sent. Check your phone."));
+    } catch (e: unknown) {
+      setServerError(getAdminErrorMessage(e, t, t("auth.otp_send_failed", "Unable to send OTP")));
+      setOtpSent(false);
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
   async function onSubmit(values: FormValues) {
     setServerError(null);
-    const otp = requireOtp ? watch("otp" as any) : undefined;
-    if (requireOtp && (!otp || String(otp).trim().length < 4)) {
-      setServerError(t("auth.otp_required", "Enter the 2FA code to continue"));
-      return;
-    }
+    setServerNotice(null);
 
     try {
       setLoading(true);
       const identifier = values.identifier;
       setValue("identifier", identifier, { shouldValidate: false });
 
+      if (values.mode === "otp") {
+        const otp = values.otp?.trim();
+        if (!otp || otp.length < 4) {
+          setServerError(t("auth.otp_required", "Enter the OTP code to continue"));
+          return;
+        }
+        const res = await loginOtp(identifier, otp);
+        const normalizedRole = (res.user?.role || "").toUpperCase();
+        if (!["ADMIN", "STAFF", "OPS_MANAGER", "FINANCE", "PROVIDER", "DRIVER"].includes(normalizedRole)) {
+          setServerError(t("auth.not_admin") as string);
+          return;
+        }
+        signIn({
+          accessToken: res.accessToken,
+          refreshToken: res.refreshToken,
+          user: { ...res.user, role: normalizedRole },
+        });
+        navigate(from, { replace: true });
+        return;
+      }
+
+      const otp = requireTwoFactor ? values.otp?.trim() : undefined;
+      if (requireTwoFactor && (!otp || otp.length < 4)) {
+        setServerError(t("auth.otp_required", "Enter the 2FA code to continue"));
+        return;
+      }
+
       const res = await adminLogin(identifier, values.password, otp as string | undefined);
       const normalizedRole = (res.user?.role || "").toUpperCase();
-      if (!["ADMIN", "STAFF", "OPS_MANAGER", "FINANCE", "PROVIDER"].includes(normalizedRole)) {
+      if (!["ADMIN", "STAFF", "OPS_MANAGER", "FINANCE", "PROVIDER", "DRIVER"].includes(normalizedRole)) {
         setServerError(t("auth.not_admin") as string);
         return;
       }
@@ -105,19 +183,27 @@ export default function SignIn() {
         refreshToken: res.refreshToken,
         user: { ...res.user, role: normalizedRole },
       });
-      setRequireOtp(false);
+      setRequireTwoFactor(false);
       navigate(from, { replace: true });
     } catch (e: unknown) {
       const code = getErrorCode(e);
-      if (code === "AUTH_ACCOUNT_DISABLED") {
+      if (values.mode === "otp") {
+        if (code === "AUTH_2FA_REQUIRED") {
+          setServerError(t("auth.otp_admin_block", "Admin accounts must use password login"));
+        } else if (code === "INVALID_OTP" || code === "OTP_INVALID" || code === "OTP_EXPIRED") {
+          setServerError(t("auth.invalid_otp", "Invalid OTP. Try again."));
+        } else {
+          setServerError(getAdminErrorMessage(e, t, t("auth.login_failed", "Login failed. Check your phone and password.")));
+        }
+      } else if (code === "AUTH_ACCOUNT_DISABLED") {
         setServerError(t("auth.account_pending", "Account pending admin approval"));
       } else if (code === "INVALID_CREDENTIALS") {
         setServerError(t("errors.INVALID_CREDENTIALS", "Incorrect email or password"));
       } else if (code === "AUTH_2FA_REQUIRED") {
-        setRequireOtp(true);
+        setRequireTwoFactor(true);
         setServerError(t("auth.otp_required", "Two-factor code required. Check your authenticator app."));
       } else if (code === "INVALID_OTP") {
-        setRequireOtp(true);
+        setRequireTwoFactor(true);
         setServerError(t("auth.invalid_otp", "Invalid 2FA code. Try again."));
       } else {
         setServerError(getAdminErrorMessage(e, t, t("auth.login_failed", "Login failed. Check your phone and password.")));
@@ -145,38 +231,109 @@ export default function SignIn() {
               {serverError}
             </div>
           )}
+          {serverNotice && (
+            <div className="mb-4 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+              {serverNotice}
+            </div>
+          )}
 
           <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
+            <input type="hidden" {...register("mode")} />
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant={mode === "password" ? "default" : "outline"}
+                className="flex-1 h-10"
+                onClick={() => setLoginMode("password")}
+              >
+                {t("auth.login_password", "Password")}
+              </Button>
+              <Button
+                type="button"
+                variant={mode === "otp" ? "default" : "outline"}
+                className="flex-1 h-10"
+                onClick={() => setLoginMode("otp")}
+              >
+                {t("auth.login_otp", "OTP")}
+              </Button>
+            </div>
             <div>
               <label className="block text-sm mb-1">
-                {t("auth.identifier_label", "Phone or Email")} <span className="text-rose-500">*</span>
+                {mode === "otp"
+                  ? t("auth.phone_label", "Phone number")
+                  : t("auth.identifier_label", "Phone or Email")}{" "}
+                <span className="text-rose-500">*</span>
               </label>
               <Input
                 type="text"
-                placeholder={t("auth.identifier_placeholder", "+201234567890 or user@fasket.com") as string}
+                placeholder={
+                  mode === "otp"
+                    ? (t("auth.phone_placeholder", "+201234567890") as string)
+                    : (t("auth.identifier_placeholder", "+201234567890 or user@fasket.com") as string)
+                }
                 className={`h-11 ${i18n.language === "ar" ? "text-right" : ""}`}
-                inputMode="email"
+                inputMode={mode === "otp" ? "tel" : "email"}
                 {...register("identifier")}
               />
               {renderError(errors.identifier?.message)}
-              <p className="text-xs text-muted-foreground mt-1">{t("validation.phone")}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {mode === "otp"
+                  ? t("auth.otp_login_hint", "We will send a one-time code to this number.")
+                  : t("validation.phone")}
+              </p>
             </div>
 
-            <div>
-              <label className="block text-sm mb-1">
-                {t("auth.password")} <span className="text-rose-500">*</span>
-              </label>
-              <Input
-                type="password"
-                placeholder="********"
-                className={`h-11 ${i18n.language === "ar" ? "text-right" : ""}`}
-                {...register("password")}
-              />
-              {renderError(errors.password?.message)}
-              <p className="text-xs text-muted-foreground mt-1">{t("validation.password")}</p>
-            </div>
+            {mode === "password" && (
+              <div>
+                <label className="block text-sm mb-1">
+                  {t("auth.password")} <span className="text-rose-500">*</span>
+                </label>
+                <Input
+                  type="password"
+                  placeholder="********"
+                  className={`h-11 ${i18n.language === "ar" ? "text-right" : ""}`}
+                  {...register("password")}
+                />
+                {renderError(errors.password?.message)}
+                <p className="text-xs text-muted-foreground mt-1">{t("validation.password")}</p>
+              </div>
+            )}
 
-            {requireOtp && (
+            {mode === "otp" && (
+              <div>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="block text-sm mb-1">
+                      {t("auth.otp_label", "OTP code")} <span className="text-rose-500">*</span>
+                    </label>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder={t("auth.otp_placeholder", "Enter your 6-digit code") as string}
+                      maxLength={8}
+                      className={`h-11 ${i18n.language === "ar" ? "text-right" : ""}`}
+                      {...register("otp" as any)}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11"
+                    onClick={handleRequestOtp}
+                    disabled={otpSending}
+                  >
+                    {otpSending
+                      ? t("auth.otp_sending", "Sending...")
+                      : otpSent
+                      ? t("auth.otp_resend", "Resend")
+                      : t("auth.otp_send", "Send code")}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">{t("auth.otp_login_hint2", "Use the code we sent via SMS or WhatsApp.")}</p>
+              </div>
+            )}
+
+            {requireTwoFactor && mode === "password" && (
               <div>
                 <label className="block text-sm mb-1">
                   {t("auth.otp_label", "2FA code")} <span className="text-rose-500">*</span>

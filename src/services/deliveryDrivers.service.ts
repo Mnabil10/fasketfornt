@@ -60,6 +60,7 @@ function buildDriverFormData(payload: DeliveryDriverPayload | DriverVehiclePaylo
   const fd = new FormData();
   if ("fullName" in payload && payload.fullName !== undefined) fd.append("fullName", String(payload.fullName));
   if ("phone" in payload && payload.phone !== undefined) fd.append("phone", String(payload.phone));
+  if ("loginPassword" in payload && payload.loginPassword) fd.append("loginPassword", String(payload.loginPassword));
   if ("nationalId" in payload && payload.nationalId !== undefined) fd.append("nationalId", payload.nationalId ?? "");
   if ("isActive" in payload && payload.isActive !== undefined) fd.append("isActive", payload.isActive ? "true" : "false");
 
@@ -97,6 +98,14 @@ function buildDriverFormData(payload: DeliveryDriverPayload | DriverVehiclePaylo
 
 function normalizeDriverBody(payload: DeliveryDriverPayload) {
   const body: DeliveryDriverPayload = { ...payload };
+  if (typeof body.loginPassword === "string") {
+    const trimmed = body.loginPassword.trim();
+    if (trimmed) {
+      body.loginPassword = trimmed;
+    } else {
+      delete body.loginPassword;
+    }
+  }
   const normalizedIdImage = resolveImageValue(payload.nationalIdImage);
   body.nationalIdImage = normalizedIdImage && !isFileLike(normalizedIdImage) ? normalizedIdImage : null;
   if (payload.vehicle) {

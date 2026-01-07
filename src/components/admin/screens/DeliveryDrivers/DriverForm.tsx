@@ -32,6 +32,20 @@ const requiredImage = (message: string) =>
     return false;
   }, { message });
 
+const passwordSchema = z
+  .string()
+  .min(8, { message: "validation.password" })
+  .refine((value) => /[A-Za-z]/.test(value) && /\d/.test(value), { message: "validation.password" });
+
+const optionalPasswordSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : undefined;
+  },
+  passwordSchema.optional()
+);
+
 const driverSchema = z
   .object({
     fullName: z.string().trim().min(2, { message: "validation.required" }),
@@ -43,6 +57,7 @@ const driverSchema = z
     nationalId: z.string().trim().min(10, { message: "validation.nationalId" }),
     nationalIdImage: requiredImage("drivers.errors.nationalIdImageRequired"),
     isActive: z.boolean(),
+    loginPassword: optionalPasswordSchema,
     type: z.enum(["CAR", "BIKE", "SCOOTER", "VAN"], { errorMap: () => ({ message: "drivers.errors.vehicleType" }) }),
     plateNumber: z.string().trim().min(3, { message: "drivers.errors.plateRequired" }),
     color: z.string().trim().min(1, { message: "validation.required" }),
@@ -93,6 +108,7 @@ export function DriverForm({ mode, initialData, onSubmit, onCancel, isSubmitting
       nationalId: "",
       nationalIdImage: null,
       isActive: true,
+      loginPassword: "",
       type: "CAR",
       plateNumber: "",
       color: "",
@@ -113,6 +129,7 @@ export function DriverForm({ mode, initialData, onSubmit, onCancel, isSubmitting
       nationalId: initialData.nationalId || "",
       nationalIdImage: resolveImageValue(initialData.nationalIdImage ?? null),
       isActive: initialData.isActive ?? true,
+      loginPassword: "",
       type: initialData.vehicle?.type ?? "CAR",
       plateNumber: initialData.vehicle?.plateNumber || "",
       color: initialData.vehicle?.color || "",
@@ -122,6 +139,11 @@ export function DriverForm({ mode, initialData, onSubmit, onCancel, isSubmitting
   }, [initialData, form]);
 
   const submit = form.handleSubmit(async (values) => {
+    const password = values.loginPassword?.trim();
+    if (mode === "create" && !password) {
+      form.setError("loginPassword", { type: "validate", message: "drivers.errors.loginPasswordRequired" });
+      return;
+    }
     await onSubmit(values);
   });
 
@@ -201,6 +223,22 @@ export function DriverForm({ mode, initialData, onSubmit, onCancel, isSubmitting
               <Input placeholder="05XXXXXXXX" inputMode="tel" {...form.register("phone")} />
               <p className="text-xs text-muted-foreground">{t("validation.phone")}</p>
               {renderError(form.formState.errors.phone)}
+            </div>
+            <div className="space-y-2">
+              <Label className={dirClass}>{t("drivers.loginPassword", "Login password")}</Label>
+              <Input
+                type="password"
+                placeholder={t("drivers.loginPasswordPlaceholder", "Set a password for driver login")}
+                autoComplete="new-password"
+                {...form.register("loginPassword")}
+              />
+              <p className="text-xs text-muted-foreground">{t("validation.password")}</p>
+              {mode === "edit" && (
+                <p className="text-xs text-muted-foreground">
+                  {t("drivers.loginPasswordHint", "Leave blank to keep the current password.")}
+                </p>
+              )}
+              {renderError(form.formState.errors.loginPassword as FieldError)}
             </div>
             <div className="space-y-2">
               <Label className={dirClass}>

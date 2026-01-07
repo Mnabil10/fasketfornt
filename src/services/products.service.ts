@@ -124,6 +124,16 @@ export async function listProducts(params?: ProductFilters) {
   const { data } = await api.get<Paged<Product>>("/api/v1/admin/products", { params: query });
   return data;
 }
+
+export async function listProviderProducts(params?: ProductFilters) {
+  const { isHotOffer, ...rest } = params ?? {};
+  const query = buildQueryParams(rest);
+  if (typeof isHotOffer === "boolean") {
+    (query as Record<string, any>).isHotOffer = String(isHotOffer);
+  }
+  const { data } = await api.get<Paged<Product>>("/api/v1/provider/products", { params: query });
+  return data;
+}
 // New: List hot offers
 export async function listHotOffers(params?: ProductFilters) {
   const { isHotOffer, ...rest } = params ?? {};
@@ -133,6 +143,14 @@ export async function listHotOffers(params?: ProductFilters) {
 }
 export async function getProduct(id: string): Promise<Product> {
   const { data } = await api.get<Product | null>(`/api/v1/admin/products/${id}`);
+  if (!data) {
+    throw new Error("Product not found");
+  }
+  return data;
+}
+
+export async function getProviderProduct(id: string): Promise<Product> {
+  const { data } = await api.get<Product | null>(`/api/v1/provider/products/${id}`);
   if (!data) {
     throw new Error("Product not found");
   }
@@ -151,6 +169,17 @@ export async function createProduct(body: ProductPayload, imageFile?: File | nul
   return data;
 }
 
+export async function createProviderProduct(body: ProductPayload, imageFile?: File | null) {
+  if (imageFile) {
+    const fd = buildProductFormData(body, imageFile);
+    const { data } = await api.post<Product>("/api/v1/provider/products", fd);
+    return data;
+  }
+  const payload = normalizeJsonPayload(body);
+  const { data } = await api.post<Product>("/api/v1/provider/products", payload);
+  return data;
+}
+
 // Update product; if an image file is provided, send multipart/form-data, else JSON
 export async function updateProduct(id: string, body: ProductPayload, imageFile?: File | null) {
   if (imageFile) {
@@ -162,8 +191,25 @@ export async function updateProduct(id: string, body: ProductPayload, imageFile?
   const { data } = await api.patch<Product>(`/api/v1/admin/products/${id}`, payload);
   return data;
 }
+
+export async function updateProviderProduct(id: string, body: ProductPayload, imageFile?: File | null) {
+  if (imageFile) {
+    const fd = buildProductFormData(body, imageFile);
+    const { data } = await api.patch<Product>(`/api/v1/provider/products/${id}`, fd);
+    return data;
+  }
+  const payload = normalizeJsonPayload(body);
+  const { data } = await api.patch<Product>(`/api/v1/provider/products/${id}`, payload);
+  return data;
+}
+
 export async function deleteProduct(id: string) {
   const { data } = await api.delete<{ ok: true }>(`/api/v1/admin/products/${id}`);
+  return data;
+}
+
+export async function deleteProviderProduct(id: string) {
+  const { data } = await api.delete<{ ok: true }>(`/api/v1/provider/products/${id}`);
   return data;
 }
 

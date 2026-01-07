@@ -16,10 +16,20 @@ import { Search, Truck, Filter, RefreshCcw, Receipt, Clock, PhoneCall, MessageCi
 import dayjs from "dayjs";
 import { toast } from "sonner";
 import { ORDERS_QUERY_KEY, useOrdersAdmin } from "../../../hooks/api/useOrdersAdmin";
+import { PROVIDER_ORDERS_QUERY_KEY, useOrdersProvider } from "../../../hooks/api/useOrdersProvider";
 import { useDeliveryDrivers } from "../../../hooks/api/useDeliveryDrivers";
 import { useAssignDriver } from "../../../hooks/api/useAssignDriver";
 import { useOrderReceipt } from "../../../hooks/api/useOrderReceipt";
-import { cancelOrder, getOrder, getOrderDriverLocation, getOrderHistory, getOrderTransitions, updateOrderStatus } from "../../../services/orders.service";
+import { useProviders } from "../../../hooks/api/useProviders";
+import {
+  cancelOrder,
+  getOrder,
+  getOrderDriverLocation,
+  getOrderHistory,
+  getOrderTransitions,
+  updateOrderStatus,
+  type OrderScope,
+} from "../../../services/orders.service";
 import { fetchAutomationEvents } from "../../../services/automation.service";
 import { getAdminErrorMessage } from "../../../lib/errors";
 import { usePermissions } from "../../../auth/permissions";
@@ -39,6 +49,8 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   const queryClient = useQueryClient();
   const perms = usePermissions();
   const isProvider = perms.role === "PROVIDER";
+  const orderScope: OrderScope = isProvider ? "provider" : "admin";
+  const ordersQueryKey = isProvider ? PROVIDER_ORDERS_QUERY_KEY : ORDERS_QUERY_KEY;
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialOrderId ?? null);
   const [detailOpen, setDetailOpen] = useState<boolean>(Boolean(initialOrderId));
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -53,6 +65,8 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     to: undefined,
     customer: "",
     driverId: undefined,
+    hasDriver: undefined,
+    providerId: undefined,
     page,
     pageSize,
   });
@@ -72,14 +86,16 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
       from: filters.from,
       to: filters.to,
       driverId: filters.driverId,
+      hasDriver: filters.hasDriver,
+      providerId: filters.providerId,
       customer: customerTerm,
       page,
       pageSize,
     }),
-    [filters.driverId, filters.from, filters.status, filters.to, customerTerm, page, pageSize]
+    [filters.driverId, filters.from, filters.status, filters.to, filters.providerId, filters.hasDriver, customerTerm, page, pageSize]
   );
 
-  const ordersQuery = useOrdersAdmin(mergedFilters);
+  const ordersQuery = isProvider ? useOrdersProvider(mergedFilters) : useOrdersAdmin(mergedFilters);
   const items = ordersQuery.data?.items || [];
   const total = ordersQuery.data?.total || 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -102,45 +118,49 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     [debouncedDriverSearch]
   );
 
+  const providerFilters = useMemo(() => ({ page: 1, pageSize: 200 }), []);
+
   const driversQuery = useDeliveryDrivers(driverFilters, { enabled: detailOpen && perms.canAssignDriver });
+  const providersQuery = useProviders(providerFilters, { enabled: !isProvider });
 
   const detailQuery = useQuery({
-    queryKey: [...ORDERS_QUERY_KEY, "detail", selectedOrderId],
-    queryFn: () => (selectedOrderId ? getOrder(selectedOrderId) : null),
+    queryKey: [...ordersQueryKey, "detail", selectedOrderId],
+    queryFn: () => (selectedOrderId ? getOrder(selectedOrderId, orderScope) : null),
     enabled: Boolean(selectedOrderId),
   });
 
   const transitionsQuery = useQuery({
-    queryKey: [...ORDERS_QUERY_KEY, "transitions", selectedOrderId],
-    queryFn: () => (selectedOrderId ? getOrderTransitions(selectedOrderId) : []),
+    queryKey: [...ordersQueryKey, "transitions", selectedOrderId],
+    queryFn: () => (selectedOrderId ? getOrderTransitions(selectedOrderId, orderScope) : []),
     enabled: Boolean(selectedOrderId),
   });
 
   const historyQuery = useQuery({
-    queryKey: [...ORDERS_QUERY_KEY, "history", selectedOrderId],
-    queryFn: () => (selectedOrderId ? getOrderHistory(selectedOrderId) : []),
+    queryKey: [...ordersQueryKey, "history", selectedOrderId],
+    queryFn: () => (selectedOrderId ? getOrderHistory(selectedOrderId, orderScope) : []),
     enabled: perms.canViewHistory && Boolean(selectedOrderId),
   });
 
   const driverLocationQuery = useQuery({
-    queryKey: [...ORDERS_QUERY_KEY, "driver-location", selectedOrderId],
-    queryFn: () => (selectedOrderId ? getOrderDriverLocation(selectedOrderId) : null),
+    queryKey: [...ordersQueryKey, "driver-location", selectedOrderId],
+    queryFn: () => (selectedOrderId ? getOrderDriverLocation(selectedOrderId, orderScope) : null),
     enabled: detailOpen && Boolean(selectedOrderId),
     refetchInterval: detailQuery.data?.status === "OUT_FOR_DELIVERY" ? 15000 : false,
   });
 
   const receiptQuery = useOrderReceipt(selectedOrderId || undefined, {
     enabled: detailOpen && Boolean(selectedOrderId),
+    scope: orderScope,
   });
 
   const automationQuery = useQuery({
-    queryKey: [...ORDERS_QUERY_KEY, "automation", selectedOrderId, detailQuery.data?.code],
+    queryKey: [...ordersQueryKey, "automation", selectedOrderId, detailQuery.data?.code],
     queryFn: () => fetchAutomationEvents({ q: detailQuery.data?.code || selectedOrderId || "" }),
     enabled: perms.canViewAutomation && detailOpen && Boolean(detailQuery.data?.code || selectedOrderId),
   });
 
   const fallbackAutomationQuery = useQuery({
-    queryKey: [...ORDERS_QUERY_KEY, "automation-fallback", selectedOrderId],
+    queryKey: [...ordersQueryKey, "automation-fallback", selectedOrderId],
     queryFn: () => fetchAutomationEvents({ q: selectedOrderId || "" }),
     enabled:
       perms.canViewAutomation &&
@@ -160,18 +180,18 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
 
   const assignDriverMutation = useAssignDriver(selectedOrderId || "");
   const updateStatusMutation = useMutation({
-    mutationFn: ({ id, to }: { id: string; to: OrderStatus }) => updateOrderStatus(id, { to }),
+    mutationFn: ({ id, to }: { id: string; to: OrderStatus }) => updateOrderStatus(id, { to }, orderScope),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: [...ORDERS_QUERY_KEY, "transitions", selectedOrderId] });
-      queryClient.invalidateQueries({ queryKey: [...ORDERS_QUERY_KEY, "history", selectedOrderId] });
+      queryClient.invalidateQueries({ queryKey: ordersQueryKey });
+      queryClient.invalidateQueries({ queryKey: [...ordersQueryKey, "transitions", selectedOrderId] });
+      queryClient.invalidateQueries({ queryKey: [...ordersQueryKey, "history", selectedOrderId] });
     },
   });
   const cancelMutation = useMutation({
-    mutationFn: ({ id, note }: { id: string; note?: string }) => cancelOrder(id, note),
+    mutationFn: ({ id, note }: { id: string; note?: string }) => cancelOrder(id, note, orderScope),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: [...ORDERS_QUERY_KEY, "detail", selectedOrderId] });
+      queryClient.invalidateQueries({ queryKey: ordersQueryKey });
+      queryClient.invalidateQueries({ queryKey: [...ordersQueryKey, "detail", selectedOrderId] });
     },
   });
 
@@ -228,8 +248,11 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   const canTransitionTo = (target: OrderStatus) => isTransitionAllowed(target, allowedTargets);
 
   const assignNotAllowed = detailQuery.data?.status
-    ? ["DELIVERED", "CANCELED"].includes((detailQuery.data.status || "").toUpperCase())
+    ? !["CONFIRMED", "PREPARING"].includes((detailQuery.data.status || "").toUpperCase())
     : false;
+
+  const driverAssignmentValue =
+    filters.hasDriver === undefined ? "all" : filters.hasDriver ? "assigned" : "unassigned";
 
   const statusBadge = (status: OrderStatus) => {
     const map: Record<OrderStatus, { color: string; label: string }> = {
@@ -260,7 +283,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     try {
       await assignDriverMutation.mutateAsync({ orderId: selectedOrderId, driverId: selectedDriverIdToAssign });
       toast.success(t("orders.driverAssigned", "Driver assigned"));
-      queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ordersQueryKey });
       detailQuery.refetch();
     } catch (error) {
       toast.error(getAdminErrorMessage(error, t));
@@ -282,7 +305,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
       await updateStatusMutation.mutateAsync({ id: selectedOrderId, to });
       toast.success(t("orders.updated", "Order updated"));
       detailQuery.refetch();
-      queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ordersQueryKey });
     } catch (error) {
       toast.error(getAdminErrorMessage(error, t));
     }
@@ -298,7 +321,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
       await cancelMutation.mutateAsync({ id: selectedOrderId });
       toast.success(t("orders.canceled", "Order canceled"));
       detailQuery.refetch();
-      queryClient.invalidateQueries({ queryKey: ORDERS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ordersQueryKey });
     } catch (error) {
       toast.error(getAdminErrorMessage(error, t));
     }
@@ -311,6 +334,8 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
       to: undefined,
       customer: "",
       driverId: undefined,
+      hasDriver: undefined,
+      providerId: undefined,
       page,
       pageSize,
     });
@@ -340,7 +365,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -374,11 +399,59 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
             </Select>
             {!isProvider && (
               <Select
+                value={filters.providerId || "all"}
+                onValueChange={(val) => {
+                  setPage(1);
+                  setFilters((prev) => ({ ...prev, providerId: val === "all" ? undefined : val }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t("orders.provider_filter", "Vendor")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("common.all", "All")}</SelectItem>
+                  {(providersQuery.data?.items || []).map((provider) => (
+                    <SelectItem key={provider.id} value={provider.id}>
+                      {provider.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {!isProvider && (
+              <Select
+                value={driverAssignmentValue}
+                onValueChange={(val) => {
+                  setPage(1);
+                  setFilters((prev) => ({
+                    ...prev,
+                    hasDriver: val === "assigned" ? true : val === "unassigned" ? false : undefined,
+                    driverId: val === "unassigned" ? undefined : prev.driverId,
+                  }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t("orders.driverAssignment", "Driver assignment")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("common.all", "All")}</SelectItem>
+                  <SelectItem value="assigned">{t("orders.driverAssignedFilter", "Has driver")}</SelectItem>
+                  <SelectItem value="unassigned">{t("orders.driverUnassignedFilter", "No driver")}</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {!isProvider && (
+              <Select
                 value={filters.driverId || "all"}
                 onValueChange={(val) => {
                   setPage(1);
-                  setFilters((prev) => ({ ...prev, driverId: val === "all" ? undefined : val }));
+                  setFilters((prev) => ({
+                    ...prev,
+                    driverId: val === "all" ? undefined : val,
+                    hasDriver: val === "all" ? prev.hasDriver : true,
+                  }));
                 }}
+                disabled={filters.hasDriver === false}
               >
                 <SelectTrigger>
                   <SelectValue placeholder={t("orders.driver_filter", "Driver")} />

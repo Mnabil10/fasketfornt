@@ -277,6 +277,7 @@ function DriverFormPage({ mode, driverId, onDone }: DriverFormPageProps) {
   const handleSubmit = async (values: DriverFormValues) => {
     setSubmitting(true);
     const color = values.color.trim();
+    const loginPassword = values.loginPassword?.trim();
     const vehiclePayload: DriverVehiclePayload = {
       type: values.type || "CAR",
       plateNumber: values.plateNumber.trim(),
@@ -290,6 +291,7 @@ function DriverFormPage({ mode, driverId, onDone }: DriverFormPageProps) {
       nationalId: values.nationalId?.trim() || null,
       nationalIdImage: normalizeImage(values.nationalIdImage),
       isActive: values.isActive,
+      loginPassword: loginPassword || undefined,
       vehicle: {
         type: vehiclePayload.type,
         plateNumber: vehiclePayload.plateNumber,

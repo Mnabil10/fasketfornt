@@ -45,6 +45,28 @@ export async function adminLogin(identifier: string, password: string, otp?: str
   return data;
 }
 
+export async function requestLoginOtp(phone: string) {
+  const { data } = await api.post<{ otpId?: string; expiresInSeconds?: number }>("/api/v1/auth/request-otp", { phone });
+  return data;
+}
+
+export async function loginOtp(phone: string, otp: string): Promise<LoginResponse> {
+  const userAgent = resolveUserAgent();
+  const { data } = await api.post<LoginResponse>(
+    "/api/v1/auth/login-otp",
+    { phone, otp },
+    {
+      headers: {
+        "X-User-Agent": userAgent,
+      },
+    }
+  );
+  if (!data?.accessToken) throw new Error("Login failed");
+  setAccessToken(data.accessToken);
+  if (data.refreshToken) setRefreshToken(data.refreshToken);
+  return data;
+}
+
 export async function registerProvider(payload: ProviderRegisterPayload) {
   const { data } = await api.post<{ ok: boolean; providerId?: string; providerStatus?: string }>(
     "/api/v1/auth/provider/register",

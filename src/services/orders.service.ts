@@ -16,6 +16,17 @@ import type {
   OrdersPaged,
 } from "../types/order";
 
+export type OrderScope = "admin" | "provider";
+
+const ORDER_BASE: Record<OrderScope, string> = {
+  admin: "/api/v1/admin/orders",
+  provider: "/api/v1/provider/orders",
+};
+
+function resolveOrderBase(scope?: OrderScope) {
+  return scope === "provider" ? ORDER_BASE.provider : ORDER_BASE.admin;
+}
+
 type DeliveryDriverDto = {
   id: string;
   fullName?: string;
@@ -324,22 +335,23 @@ function normalizeOrderReceipt(dto: OrderReceiptDto): OrderReceipt {
   };
 }
 
-export async function listOrders(params?: OrderFilters): Promise<OrdersPaged> {
+export async function listOrders(params?: OrderFilters, scope: OrderScope = "admin"): Promise<OrdersPaged> {
   const query = buildQueryParams(params) ?? {};
   const search = params?.customer?.trim();
   if (search && search.length >= 3) {
     query.customer = search;
   }
 
+  const base = resolveOrderBase(scope);
   try {
-    const { data } = await api.get<OrdersPaged<OrderDto>>("/api/v1/admin/orders", { params: query });
+    const { data } = await api.get<OrdersPaged<OrderDto>>(base, { params: query });
     const items = (data.items || []).map((order) => normalizeOrderSummary(order));
     return { ...data, items };
   } catch (error) {
     if (shouldRetryWithoutFilters(error, ["status"]) && query.status) {
       const fallbackQuery = { ...query };
       delete (fallbackQuery as any).status;
-      const { data } = await api.get<OrdersPaged<OrderDto>>("/api/v1/admin/orders", { params: fallbackQuery });
+      const { data } = await api.get<OrdersPaged<OrderDto>>(base, { params: fallbackQuery });
       const items = (data.items || []).map((order) => normalizeOrderSummary(order));
       return { ...data, items };
     }
@@ -347,12 +359,14 @@ export async function listOrders(params?: OrderFilters): Promise<OrdersPaged> {
   }
 }
 
-export async function getOrder(id: string): Promise<OrderDetail> {
-  const { data } = await api.get<OrderDto>(`/api/v1/admin/orders/${id}`);
+export async function getOrder(id: string, scope: OrderScope = "admin"): Promise<OrderDetail> {
+  const base = resolveOrderBase(scope);
+  const { data } = await api.get<OrderDto>(`${base}/${id}`);
   return normalizeOrderDetail(data);
 }
 
-export async function updateOrderStatus(id: string, body: OrderStatusPayload) {
+export async function updateOrderStatus(id: string, body: OrderStatusPayload, scope: OrderScope = "admin") {
+  const base = resolveOrderBase(scope);
   const payload = body.note ? { note: body.note } : {};
   const status = body.to;
   const actionMap: Record<string, string> = {
@@ -364,10 +378,10 @@ export async function updateOrderStatus(id: string, body: OrderStatusPayload) {
   };
   const action = actionMap[status];
   if (action) {
-    const { data } = await api.post<{ ok: true }>(`/api/v1/admin/orders/${id}/${action}`, payload);
+    const { data } = await api.post<{ ok: true }>(`${base}/${id}/${action}`, payload);
     return data;
   }
-  const { data } = await api.patch<{ ok: true }>(`/api/v1/admin/orders/${id}/status`, body);
+  const { data } = await api.patch<{ ok: true }>(`${base}/${id}/status`, body);
   return data;
 }
 
@@ -376,14 +390,16 @@ export async function assignDriverToOrder(id: string, driverId: string) {
   return data;
 }
 
-export async function cancelOrder(id: string, note?: string) {
-  const { data } = await api.post(`/api/v1/admin/orders/${id}/cancel`, note ? { note } : {});
+export async function cancelOrder(id: string, note?: string, scope: OrderScope = "admin") {
+  const base = resolveOrderBase(scope);
+  const { data } = await api.post(`${base}/${id}/cancel`, note ? { note } : {});
   return data;
 }
 
-export async function getOrderHistory(id: string) {
+export async function getOrderHistory(id: string, scope: OrderScope = "admin") {
+  const base = resolveOrderBase(scope);
   const { data } = await api.get<{ items: Array<{ id: string; at: string; from?: string; to: string; actor?: string; note?: string }> }>(
-    `/api/v1/admin/orders/${id}/history`
+    `${base}/${id}/history`
   );
   return (data?.items || []).map((entry) => ({
     id: entry.id,
@@ -395,9 +411,10 @@ export async function getOrderHistory(id: string) {
   }));
 }
 
-export async function getOrderTransitions(id: string) {
+export async function getOrderTransitions(id: string, scope: OrderScope = "admin") {
+  const base = resolveOrderBase(scope);
   const { data } = await api.get<Array<{ from: string; to: string; label?: string; reason?: string }>>(
-    `/api/v1/admin/orders/${id}/transitions`
+    `${base}/${id}/transitions`
   );
   return (data || []).map((entry) => ({
     from: entry.from as OrderStatus,
@@ -407,7 +424,8 @@ export async function getOrderTransitions(id: string) {
   }));
 }
 
-export async function getOrderDriverLocation(orderId: string) {
+export async function getOrderDriverLocation(orderId: string, scope: OrderScope = "admin") {
+  const base = resolveOrderBase(scope);
   const { data } = await api.get<{
     driverId: string;
     lat: number;
@@ -416,7 +434,7 @@ export async function getOrderDriverLocation(orderId: string) {
     heading?: number | null;
     speed?: number | null;
     recordedAt: string;
-  } | null>(`/api/v1/admin/orders/${orderId}/driver-location`);
+  } | null>(`${base}/${orderId}/driver-location`);
   return data;
 }
 
@@ -426,8 +444,9 @@ export async function lookupOrder(params: { code?: string; phone?: string }) {
   return data ? normalizeOrderDetail(data) : null;
 }
 
-export async function getOrderReceipt(orderId: string): Promise<OrderReceipt> {
-  const { data } = await api.get<OrderReceiptDto>(`/api/v1/admin/orders/${orderId}/receipt`);
+export async function getOrderReceipt(orderId: string, scope: OrderScope = "admin"): Promise<OrderReceipt> {
+  const base = resolveOrderBase(scope);
+  const { data } = await api.get<OrderReceiptDto>(`${base}/${orderId}/receipt`);
   return normalizeOrderReceipt(data);
 }
 

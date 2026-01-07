@@ -7,14 +7,18 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   createProduct,
+  createProviderProduct,
   updateProduct,
+  updateProviderProduct,
   deleteProduct,
+  deleteProviderProduct,
   getProduct,
+  getProviderProduct,
   type Product,
   downloadProductsBulkTemplate,
   uploadProductsBulk,
 } from "../../../services/products.service";
-import { uploadAdminFile } from "../../../services/uploads.service";
+import { uploadAdminFile, uploadProviderFile } from "../../../services/uploads.service";
 import { type Category } from "../../../services/categories.service";
 import { toCents, fromCents } from "../../../lib/money";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
@@ -70,7 +74,9 @@ import { toast } from "sonner";
 import { useAuth } from "../../../auth/AuthProvider";
 import { useDebounce } from "../../../hooks/useDebounce";
 import { useProductsAdmin, PRODUCTS_QUERY_KEY } from "../../../hooks/api/useProductsAdmin";
+import { useProductsProvider, PROVIDER_PRODUCTS_QUERY_KEY } from "../../../hooks/api/useProductsProvider";
 import { useCategoriesAdmin } from "../../../hooks/api/useCategoriesAdmin";
+import { useCategoriesProvider } from "../../../hooks/api/useCategoriesProvider";
 import { useProviders } from "../../../hooks/api/useProviders";
 import { AdminTableSkeleton } from "../../admin/common/AdminTableSkeleton";
 import { EmptyState } from "../../admin/common/EmptyState";
@@ -339,7 +345,13 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
   const isArabic = i18n.language?.startsWith("ar");
   const { isAdmin, isProvider } = useAuth();
   const canManageProducts = isAdmin || isProvider;
+  const productQueryKey = isProvider ? PROVIDER_PRODUCTS_QUERY_KEY : PRODUCTS_QUERY_KEY;
   const queryClient = useQueryClient();
+  const uploadFile = isProvider ? uploadProviderFile : uploadAdminFile;
+  const createFn = isProvider ? createProviderProduct : createProduct;
+  const updateFn = isProvider ? updateProviderProduct : updateProduct;
+  const deleteFn = isProvider ? deleteProviderProduct : deleteProduct;
+  const getFn = isProvider ? getProviderProduct : getProduct;
 
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [searchInput, setSearchInput] = useState("");
@@ -347,13 +359,15 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
   const [drawerState, setDrawerState] = useState<DrawerState>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
 
-  const categoriesQuery = useCategoriesAdmin(
-    {
-      pageSize: 100,
-      providerId: isAdmin && filters.providerId !== "all" ? filters.providerId : undefined,
-    },
-    { enabled: true }
-  );
+  const categoriesQuery = isProvider
+    ? useCategoriesProvider({ pageSize: 100 }, { enabled: true })
+    : useCategoriesAdmin(
+        {
+          pageSize: 100,
+          providerId: isAdmin && filters.providerId !== "all" ? filters.providerId : undefined,
+        },
+        { enabled: true }
+      );
   const providersQuery = useProviders({ page: 1, pageSize: 200 }, { enabled: isAdmin });
   const providers = providersQuery.data?.items ?? [];
   const providerLookup = useMemo(() => {
@@ -389,7 +403,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
     };
   }, [filters, debouncedSearch, isAdmin]);
 
-  const productsQuery = useProductsAdmin(apiFilters);
+  const productsQuery = isProvider ? useProductsProvider(apiFilters) : useProductsAdmin(apiFilters);
 
   const categoryLookup = useMemo(() => {
     const map = new Map<string, string>();
@@ -397,6 +411,35 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
       map.set(category.id, isArabic && category.nameAr ? category.nameAr : category.name)
     );
     return map;
+  }, [categoriesQuery.data?.items, isArabic]);
+
+  const categoryOptions = useMemo(() => {
+    const items = categoriesQuery.data?.items || [];
+    const labelFor = (category: Category) => (isArabic && category.nameAr ? category.nameAr : category.name);
+    const childrenByParent = new Map<string | null, Category[]>();
+    items.forEach((category) => {
+      const key = category.parentId ?? null;
+      const list = childrenByParent.get(key) ?? [];
+      list.push(category);
+      childrenByParent.set(key, list);
+    });
+    const visited = new Set<string>();
+    const walk = (parentId: string | null, depth: number): Array<{ id: string; label: string }> => {
+      const children = childrenByParent.get(parentId) ?? [];
+      return children.flatMap((child) => {
+        visited.add(child.id);
+        const prefix = depth > 0 ? `${"--".repeat(depth)} ` : "";
+        return [{ id: child.id, label: `${prefix}${labelFor(child)}` }, ...walk(child.id, depth + 1)];
+      });
+    };
+    const flattened = walk(null, 0);
+    const orphans = items.filter((category) => !visited.has(category.id));
+    if (orphans.length) {
+      flattened.push(
+        ...orphans.map((category) => ({ id: category.id, label: labelFor(category) }))
+      );
+    }
+    return flattened;
   }, [categoriesQuery.data?.items, isArabic]);
 
   const tableItems = useMemo(() => {
@@ -477,7 +520,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
       }
 
       if (payload.imageFile) {
-        const { url } = await uploadAdminFile(payload.imageFile);
+        const { url } = await uploadFile(payload.imageFile);
         basePayload.imageUrl = url;
         if (!basePayload.images?.length) {
           basePayload.images = [url];
@@ -487,15 +530,15 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
       }
 
       if (payload.id) {
-        return updateProduct(payload.id, basePayload, null);
+        return updateFn(payload.id, basePayload, null);
       }
-      return createProduct(basePayload, null);
+      return createFn(basePayload, null);
     },
     onSuccess: (_, variables) => {
       toast.success(
         variables.id ? t("products.updated", "Product updated") : t("products.created", "Product created")
       );
-      queryClient.invalidateQueries({ queryKey: PRODUCTS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: productQueryKey });
       setDrawerState(null);
     },
     onError: (error) => {
@@ -504,10 +547,10 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteProduct(id),
+    mutationFn: (id: string) => deleteFn(id),
     onSuccess: () => {
       toast.success(t("products.deleted", "Product deleted"));
-      queryClient.invalidateQueries({ queryKey: PRODUCTS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: productQueryKey });
     },
     onError: (error) => toast.error(getAdminErrorMessage(error, t, t("app.notifications.error"))),
   });
@@ -516,7 +559,7 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
     if (!adminState?.selectedProduct) return;
     (async () => {
       try {
-        const product = await getProduct(String(adminState.selectedProduct));
+        const product = await getFn(String(adminState.selectedProduct));
         setDrawerState({ mode: "edit", product });
       } catch (error) {
         toast.error(getAdminErrorMessage(error, t, t("products.not_found", "Product not found")));
@@ -568,10 +611,12 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
         </div>
         {canManageProducts && (
           <div className="flex flex-col sm:flex-row gap-3">
-            <Button variant="outline" className="gap-2" onClick={() => setBulkOpen(true)}>
-              <Upload className="w-4 h-4" />
-              {t("products.importExcel", "Bulk upload")}
-            </Button>
+            {isAdmin && (
+              <Button variant="outline" className="gap-2" onClick={() => setBulkOpen(true)}>
+                <Upload className="w-4 h-4" />
+                {t("products.importExcel", "Bulk upload")}
+              </Button>
+            )}
             <Button className="gap-2" onClick={() => setDrawerState({ mode: "create" })}>
               <Plus className="w-4 h-4" />
               {t("products.addNew")}
@@ -645,9 +690,9 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t("common.all")}</SelectItem>
-                  {(categoriesQuery.data?.items || []).map((category) => (
+                  {categoryOptions.map((category) => (
                     <SelectItem key={category.id} value={category.id}>
-                      {isArabic && category.nameAr ? category.nameAr : category.name}
+                      {category.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -999,12 +1044,14 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
           <ProductForm
             key={drawerState?.product?.id || drawerState?.mode}
             categories={categoriesQuery.data?.items || []}
+            categoryOptions={categoryOptions}
             providers={providers}
             showProviderSelect={isAdmin}
             providerDefaultId={isAdmin && filters.providerId !== "all" ? filters.providerId : undefined}
             initialValues={mapProductToForm(drawerState?.product)}
             loading={upsertMutation.isPending}
             canEditPrice={isAdmin || isProvider}
+            uploadFile={uploadFile}
             onCancel={() => setDrawerState(null)}
             onSubmit={(values, imageFile) =>
               upsertMutation.mutate({ id: drawerState?.product?.id, values, imageFile, product: drawerState?.product })
@@ -1013,11 +1060,11 @@ export function ProductsManagement(props?: Partial<ScreenProps>) {
         </DialogContent>
       </Dialog>
 
-      {canManageProducts && (
+      {isAdmin && (
         <BulkUploadDrawer
           open={bulkOpen}
           onOpenChange={(open) => setBulkOpen(open)}
-          onCompleted={() => queryClient.invalidateQueries({ queryKey: PRODUCTS_QUERY_KEY })}
+          onCompleted={() => queryClient.invalidateQueries({ queryKey: productQueryKey })}
         />
       )}
     </div>
@@ -1048,24 +1095,28 @@ function StatCard({ icon: Icon, label, value, accent }: StatCardProps) {
 
 type ProductFormProps = {
   categories: Category[];
+  categoryOptions: Array<{ id: string; label: string }>;
   providers: Array<{ id: string; name: string; nameAr?: string | null }>;
   showProviderSelect: boolean;
   providerDefaultId?: string;
   initialValues: ProductFormValues;
   loading: boolean;
   canEditPrice: boolean;
+  uploadFile: (file: File | Blob, options?: { resize?: { maxDimension?: number; quality?: number; maxBytes?: number } }) => Promise<{ url: string; warnings?: string[] }>;
   onSubmit: (values: ProductFormValues, imageFile: File | null) => void;
   onCancel: () => void;
 };
 
 function ProductForm({
   categories,
+  categoryOptions,
   providers,
   showProviderSelect,
   providerDefaultId,
   initialValues,
   loading,
   canEditPrice,
+  uploadFile,
   onSubmit,
   onCancel,
 }: ProductFormProps) {
@@ -1115,6 +1166,8 @@ function ProductForm({
   const visibleCategories = showProviderSelect && selectedProviderId
     ? categories.filter((category) => category.providerId === selectedProviderId)
     : categories;
+  const visibleCategoryIds = new Set(visibleCategories.map((category) => category.id));
+  const visibleOptions = categoryOptions.filter((option) => visibleCategoryIds.has(option.id));
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1190,9 +1243,9 @@ function ProductForm({
                 <SelectValue placeholder={t("products.category")} />
               </SelectTrigger>
               <SelectContent>
-                {visibleCategories.map((category) => (
+                {visibleOptions.map((category) => (
                   <SelectItem key={category.id} value={category.id}>
-                    {category.name}
+                    {category.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1326,6 +1379,7 @@ function ProductForm({
             mainImage={form.watch("mainImage")}
             onChange={(value) => field.onChange(value)}
             onMainChange={(value) => form.setValue("mainImage", value)}
+            uploadFile={uploadFile}
           />
         )}
       />
@@ -1346,9 +1400,10 @@ type ProductImagesInputProps = {
   mainImage?: string;
   onChange: (value: string[]) => void;
   onMainChange: (value: string) => void;
+  uploadFile: (file: File | Blob, options?: { resize?: { maxDimension?: number; quality?: number; maxBytes?: number } }) => Promise<{ url: string; warnings?: string[] }>;
 };
 
-function ProductImagesInput({ value, mainImage, onChange, onMainChange }: ProductImagesInputProps) {
+function ProductImagesInput({ value, mainImage, onChange, onMainChange, uploadFile }: ProductImagesInputProps) {
   const { t } = useTranslation();
   const dragIndex = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -1366,7 +1421,7 @@ function ProductImagesInput({ value, mainImage, onChange, onMainChange }: Produc
           toast.error(t("products.upload.too_large", "File too large"));
           continue;
         }
-        const { url } = await uploadAdminFile(file);
+        const { url } = await uploadFile(file);
         nextUrls.push(url);
       }
       if (nextUrls.length) {

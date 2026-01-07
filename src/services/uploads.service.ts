@@ -25,6 +25,19 @@ const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const DIRECT_UPLOAD_ENABLED = (import.meta.env.VITE_ENABLE_DIRECT_UPLOADS ?? "false") !== "false";
 
 export async function uploadAdminFile(file: File | Blob, options?: { resize?: ResizeOptions }): Promise<UploadResponse> {
+  return uploadFileWithEndpoint(file, "/api/v1/admin/uploads", "/api/v1/admin/uploads/signed-url", options);
+}
+
+export async function uploadProviderFile(file: File | Blob, options?: { resize?: ResizeOptions }): Promise<UploadResponse> {
+  return uploadFileWithEndpoint(file, "/api/v1/provider/uploads", null, options);
+}
+
+async function uploadFileWithEndpoint(
+  file: File | Blob,
+  endpoint: string,
+  signedUrlEndpoint: string | null,
+  options?: { resize?: ResizeOptions }
+): Promise<UploadResponse> {
   const size = (file as File).size ?? (file as Blob).size;
   if (typeof size === "number" && size > MAX_UPLOAD_BYTES) {
     throw new Error(`File is too large. Max ${MAX_UPLOAD_MB}MB`);
@@ -35,8 +48,8 @@ export async function uploadAdminFile(file: File | Blob, options?: { resize?: Re
     maxBytes: options?.resize?.maxBytes ?? MAX_UPLOAD_BYTES,
   });
 
-  if (DIRECT_UPLOAD_ENABLED) {
-    const uploadUrl = await tryDirectUpload(maybeResized as File);
+  if (DIRECT_UPLOAD_ENABLED && signedUrlEndpoint) {
+    const uploadUrl = await tryDirectUpload(maybeResized as File, signedUrlEndpoint);
     if (uploadUrl) {
       return uploadUrl;
     }
@@ -46,7 +59,7 @@ export async function uploadAdminFile(file: File | Blob, options?: { resize?: Re
   formData.append("file", maybeResized);
 
   // Let the browser set the multipart boundary automatically
-  const { data } = await api.post<UploadResponse>("/api/v1/admin/uploads", formData);
+  const { data } = await api.post<UploadResponse>(endpoint, formData);
 
   return data;
 }
@@ -143,10 +156,10 @@ async function encodeImage(
   return dataURLToBlob(dataUrl, opts.type);
 }
 
-async function tryDirectUpload(file: File): Promise<UploadResponse | null> {
+async function tryDirectUpload(file: File, endpoint: string): Promise<UploadResponse | null> {
   const contentType = file.type || "application/octet-stream";
   try {
-    const { data } = await api.get<SignedUploadTarget>("/api/v1/admin/uploads/signed-url", {
+    const { data } = await api.get<SignedUploadTarget>(endpoint, {
       params: { filename: file.name || "upload", contentType },
     });
     if (!data?.uploadUrl) return null;

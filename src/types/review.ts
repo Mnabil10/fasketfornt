@@ -25,6 +25,9 @@ export type Review = {
   providerId?: string;
   orderId?: string;
   userId?: string;
+  reply?: string | null;
+  replyAt?: string | null;
+  replyById?: string | null;
   moderatedAt?: string | null;
   moderationNote?: string | null;
   createdAt: string;

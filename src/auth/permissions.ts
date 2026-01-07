@@ -32,8 +32,9 @@ const ROLE_CAPABILITIES: Record<string, Capability[]> = {
     "orders:view-pii",
   ],
   FINANCE: ["reports:profit", "orders:view-pii"],
-  PROVIDER: ["orders:update", "orders:view-history", "orders:view-pii"],
+  PROVIDER: ["orders:update", "orders:cancel", "orders:view-history", "orders:view-pii"],
   STAFF: ["automation:view", "support:view"],
+  DRIVER: [],
 };
 
 export function hasCapability(role: string | undefined | null, capability: Capability) {

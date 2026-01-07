@@ -34,6 +34,7 @@ export type DeliveryDriverPayload = {
   nationalId?: string | null;
   nationalIdImage?: UploadableImage;
   isActive?: boolean;
+  loginPassword?: string;
   vehicle?: DriverVehicle | null;
 };
 
