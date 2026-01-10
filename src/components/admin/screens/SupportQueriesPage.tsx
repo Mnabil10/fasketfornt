@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import dayjs from "dayjs";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { Input } from "../../ui/input";
 import { Button } from "../../ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../ui/tabs";
 import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
 import { ErrorState } from "../common/ErrorState";
 import { EmptyState } from "../common/EmptyState";
@@ -12,11 +13,78 @@ import { fetchSupportQueries } from "../../../services/support.service";
 import { getAdminErrorMessage } from "../../../lib/errors";
 import { maskPhone } from "../../../lib/pii";
 import { usePermissions } from "../../../auth/permissions";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "../../ui/badge";
 import { AlertTriangle } from "lucide-react";
+import { WhatsAppInbox } from "./WhatsAppInbox";
+import { WhatsAppLogs } from "./WhatsAppLogs";
 
 export function SupportQueriesPage() {
+  const { t } = useTranslation();
+  const perms = usePermissions();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  if (!perms.canViewSupport) {
+    return (
+      <div className="p-6">
+        <ErrorState message={t("support.permission", "You do not have access to support queries.")} />
+      </div>
+    );
+  }
+
+  const activeTab = useMemo(() => {
+    const segments = location.pathname.split("/").filter(Boolean);
+    const section = segments[1];
+    if (section === "whatsapp") return "whatsapp-inbox";
+    if (section === "whatsapp-logs") return "whatsapp-logs";
+    return "queries";
+  }, [location.pathname]);
+
+  const handleTabChange = (value: string) => {
+    if (value === "queries") {
+      navigate("/support");
+      return;
+    }
+    if (value === "whatsapp-inbox") {
+      navigate("/support/whatsapp");
+      return;
+    }
+    if (value === "whatsapp-logs") {
+      navigate("/support/whatsapp-logs");
+    }
+  };
+
+  return (
+    <div className="p-4 lg:p-6 space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold">{t("support.center_title", "Support Center")}</h1>
+        <p className="text-muted-foreground">
+          {t("support.center_subtitle", "Manage support queries and WhatsApp operations")}
+        </p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+        <TabsList className="flex flex-wrap">
+          <TabsTrigger value="queries">{t("support.title", "Support Queries")}</TabsTrigger>
+          <TabsTrigger value="whatsapp-inbox">{t("whatsapp.inbox_title", "WhatsApp Inbox")}</TabsTrigger>
+          <TabsTrigger value="whatsapp-logs">{t("whatsapp.logs_title", "WhatsApp Logs")}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="queries" className="mt-4">
+          <SupportQueriesTab />
+        </TabsContent>
+        <TabsContent value="whatsapp-inbox" className="mt-4">
+          <WhatsAppInbox />
+        </TabsContent>
+        <TabsContent value="whatsapp-logs" className="mt-4">
+          <WhatsAppLogs />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function SupportQueriesTab() {
   const { t } = useTranslation();
   const perms = usePermissions();
   const navigate = useNavigate();
@@ -32,14 +100,6 @@ export function SupportQueriesPage() {
     keepPreviousData: true,
   });
 
-  if (!perms.canViewSupport) {
-    return (
-      <div className="p-6">
-        <ErrorState message={t("support.permission", "You do not have access to support queries.")} />
-      </div>
-    );
-  }
-
   const items = query.data?.items || [];
   const total = query.data?.total || 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -49,14 +109,7 @@ export function SupportQueriesPage() {
   const masked = (value?: string | null) => (perms.canViewPII ? value || "" : maskPhone(value || ""));
 
   return (
-    <div className="p-4 lg:p-6 space-y-4">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{t("support.title", "Support Queries")}</h1>
-          <p className="text-muted-foreground">{t("support.subtitle", "Audit support bot lookups and quick order access")}</p>
-        </div>
-      </div>
-
+    <div className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>{t("common.search", "Search")}</CardTitle>

@@ -81,9 +81,13 @@ type OrderItemDto = {
 type OrderDto = {
   id: string;
   code?: string;
+  orderGroupId?: string | null;
   createdAt: string;
   updatedAt?: string;
   status: OrderStatus | string;
+  deliveryFailedAt?: string | null;
+  deliveryFailedReason?: string | null;
+  deliveryFailedNote?: string | null;
   totalCents?: number;
   customer?: Order["customer"];
   user?: Order["customer"];
@@ -212,10 +216,14 @@ function normalizeOrderSummary(order: OrderDto): Order {
   return {
     id: order.id,
     code: order.code || order.id,
+    orderGroupId: order.orderGroupId ?? null,
     totalCents: order.totalCents ?? 0,
     status: (order.status as OrderStatus) ?? "PENDING",
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
+    deliveryFailedAt: order.deliveryFailedAt ?? null,
+    deliveryFailedReason: (order.deliveryFailedReason as Order["deliveryFailedReason"]) ?? null,
+    deliveryFailedNote: order.deliveryFailedNote ?? null,
     customer,
     deliveryZone: normalizeZone(order.deliveryZone ?? order.zone ?? null),
     driver: normalizeDriver(order.driver),

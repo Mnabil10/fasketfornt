@@ -32,6 +32,7 @@ import {
   Flame,
   Ticket,
   Truck,
+  AlertTriangle,
   Store,
   MapPin,
   CreditCard,
@@ -81,6 +82,7 @@ import { CampaignsManagement } from "./screens/CampaignsManagement";
 import { ProviderAccount } from "./screens/ProviderAccount";
 import { ReviewsManagement } from "./screens/ReviewsManagement";
 import { ProviderApplicationsManagement } from "./screens/ProviderApplicationsManagement";
+import { FailedDeliveriesQueue } from "./screens/FailedDeliveriesQueue";
 import { useTranslation } from "react-i18next";
 import BrandLogo from "../common/BrandLogo";
 import { fetchDashboard, type DashboardSummary } from "../../services/dashboard.service";
@@ -102,6 +104,7 @@ export type AdminScreen =
   | "products"
   | "hot-offers"
   | "orders"
+  | "failed-deliveries"
   | "customers"
   | "coupons"
   | "billing"
@@ -150,7 +153,7 @@ export function AdminDashboard() {
   const pathSegments = useMemo(() => location.pathname.replace(/^\/+/, "").split("/").filter(Boolean), [location.pathname]);
   const derivedScreen: AdminScreen =
     (pathSegments[0] as AdminScreen | undefined) &&
-    (["dashboard", "earnings", "providers", "provider-applications", "branches", "categories", "products", "hot-offers", "orders", "customers", "coupons", "billing", "campaigns", "settings", "delivery-drivers", "automation-outbox", "reports", "support", "reviews", "driver-orders", "provider-account"] as const).includes(
+    (["dashboard", "earnings", "providers", "provider-applications", "branches", "categories", "products", "hot-offers", "orders", "failed-deliveries", "customers", "coupons", "billing", "campaigns", "settings", "delivery-drivers", "automation-outbox", "reports", "support", "reviews", "driver-orders", "provider-account"] as const).includes(
       pathSegments[0] as AdminScreen
     )
       ? (pathSegments[0] as AdminScreen)
@@ -194,7 +197,7 @@ export function AdminDashboard() {
     ];
     const automationScreens: AdminScreen[] = perms.canViewAutomation ? ["automation-outbox"] : [];
     const profitScreens: AdminScreen[] = perms.canViewProfit ? ["reports"] : [];
-    const supportScreens: AdminScreen[] = perms.canViewSupport ? ["support"] : [];
+    const supportScreens: AdminScreen[] = perms.canViewSupport ? ["support", "failed-deliveries"] : [];
     if (role === "ADMIN") return [...base, ...adminExtras, ...automationScreens, ...profitScreens, ...supportScreens];
     if (role === "OPS_MANAGER") return [...base, "dashboard", ...automationScreens, ...supportScreens];
     if (role === "FINANCE") return ["dashboard", "earnings", ...profitScreens];
@@ -302,6 +305,7 @@ export function AdminDashboard() {
       { id: "products" as const, icon: Package, badge: lowStockCount && lowStockCount > 0 ? lowStockCount : null },
       { id: "hot-offers" as const, icon: Flame, badge: null },
       { id: "orders" as const, icon: ShoppingCart, badge: ordersCount },
+      { id: "failed-deliveries" as const, icon: AlertTriangle, badge: null },
       { id: "earnings" as const, icon: Wallet, badge: null },
       { id: "driver-orders" as const, icon: ClipboardList, badge: null },
       { id: "delivery-drivers" as const, icon: Truck, badge: null },
@@ -329,6 +333,7 @@ export function AdminDashboard() {
     products: "Products",
     "hot-offers": "Hot Offers",
     orders: "Orders",
+    "failed-deliveries": "Failed Deliveries",
     "driver-orders": "Driver Orders",
     customers: "Customers",
     coupons: "Coupons",
@@ -459,6 +464,8 @@ export function AdminDashboard() {
         return <HotOffersList {...p} />;
       case "orders":
         return <OrdersManagement initialOrderId={secondary} />;
+      case "failed-deliveries":
+        return <FailedDeliveriesQueue />;
       case "earnings":
         return (
           <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">{t("app.loading", "Loading...")}</div>}>

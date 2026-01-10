@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -8,6 +9,7 @@ import { Button } from "../../ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../ui/select";
+import { Textarea } from "../../ui/textarea";
 import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
 import { EmptyState } from "../common/EmptyState";
 import { ErrorState } from "../common/ErrorState";
@@ -17,9 +19,24 @@ import { fmtCurrency } from "../../../lib/money";
 import { useDriverOrder, useDriverOrders, DRIVER_ORDERS_QUERY_KEY } from "../../../hooks/api/useDriverOrders";
 import { updateDriverOrderStatus } from "../../../services/driver-orders.service";
 import type { DriverOrder, DriverOrderAddress } from "../../../types/driver-orders";
-import type { OrderStatus } from "../../../types/order";
+import type { DeliveryFailureReason, OrderStatus } from "../../../types/order";
 
-const STATUS_OPTIONS: OrderStatus[] = ["PENDING", "CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELED"];
+const STATUS_OPTIONS: OrderStatus[] = [
+  "PENDING",
+  "CONFIRMED",
+  "PREPARING",
+  "OUT_FOR_DELIVERY",
+  "DELIVERY_FAILED",
+  "DELIVERED",
+  "CANCELED",
+];
+
+const FAILURE_REASONS: DeliveryFailureReason[] = [
+  "NO_ANSWER",
+  "WRONG_ADDRESS",
+  "UNSAFE_LOCATION",
+  "CUSTOMER_REQUESTED_RESCHEDULE",
+];
 
 const statusBadge = (status: OrderStatus, t: (key: string, fallback?: string) => string) => {
   const map: Record<OrderStatus, { color: string; label: string }> = {
@@ -30,6 +47,7 @@ const statusBadge = (status: OrderStatus, t: (key: string, fallback?: string) =>
       color: "bg-purple-100 text-purple-800",
       label: t("orders.statuses.OUT_FOR_DELIVERY", "Out for delivery"),
     },
+    DELIVERY_FAILED: { color: "bg-orange-100 text-orange-800", label: t("orders.statuses.DELIVERY_FAILED", "Delivery failed") },
     DELIVERED: { color: "bg-green-100 text-green-800", label: t("orders.statuses.DELIVERED", "Delivered") },
     CANCELED: { color: "bg-red-100 text-red-800", label: t("orders.statuses.CANCELED", "Canceled") },
   };
@@ -53,6 +71,10 @@ export function DriverOrders() {
   const pageSize = 10;
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const [failureDialogOpen, setFailureDialogOpen] = useState(false);
+  const [failureOrder, setFailureOrder] = useState<DriverOrder | null>(null);
+  const [failureReason, setFailureReason] = useState<DeliveryFailureReason>("NO_ANSWER");
+  const [failureNote, setFailureNote] = useState("");
 
   const ordersQuery = useDriverOrders({
     status: statusFilter === "all" ? undefined : statusFilter,
@@ -63,7 +85,17 @@ export function DriverOrders() {
   const detailQuery = useDriverOrder(detailOrderId || undefined, { enabled: Boolean(detailOrderId) });
 
   const updateStatusMutation = useMutation({
-    mutationFn: ({ id, to }: { id: string; to: OrderStatus }) => updateDriverOrderStatus(id, { to }),
+    mutationFn: ({
+      id,
+      to,
+      reason,
+      note,
+    }: {
+      id: string;
+      to: OrderStatus;
+      reason?: DeliveryFailureReason;
+      note?: string;
+    }) => updateDriverOrderStatus(id, { to, reason, note }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: DRIVER_ORDERS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: [...DRIVER_ORDERS_QUERY_KEY, "detail", variables.id] });
@@ -75,6 +107,33 @@ export function DriverOrders() {
     try {
       await updateStatusMutation.mutateAsync({ id: orderId, to });
       toast.success(t("orders.updated", "Order updated"));
+    } catch (error) {
+      toast.error(getAdminErrorMessage(error, t));
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
+  const openFailureDialog = (order: DriverOrder) => {
+    setFailureOrder(order);
+    setFailureReason("NO_ANSWER");
+    setFailureNote("");
+    setFailureDialogOpen(true);
+  };
+
+  const submitFailure = async () => {
+    if (!failureOrder) return;
+    setUpdatingOrderId(failureOrder.id);
+    try {
+      await updateStatusMutation.mutateAsync({
+        id: failureOrder.id,
+        to: "DELIVERY_FAILED",
+        reason: failureReason,
+        note: failureNote.trim() || undefined,
+      });
+      toast.success(t("orders.deliveryFailedRecorded", "Delivery marked as failed"));
+      setFailureDialogOpen(false);
+      setFailureOrder(null);
     } catch (error) {
       toast.error(getAdminErrorMessage(error, t));
     } finally {
@@ -144,6 +203,7 @@ export function DriverOrders() {
               const meta = statusBadge(order.status, t);
               const canOutForDelivery = order.status === "PREPARING";
               const canDeliver = order.status === "OUT_FOR_DELIVERY";
+              const canFail = order.status === "OUT_FOR_DELIVERY";
               const addressText = formatAddress(order.address, emptyFallback);
               const coordsAvailable = hasCoords(order.address);
               return (
@@ -199,6 +259,14 @@ export function DriverOrders() {
                         onClick={() => handleStatusUpdate(order.id, "DELIVERED")}
                       >
                         {t("orders.markDelivered", "Mark delivered")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!canFail || updatingOrderId === order.id}
+                        onClick={() => openFailureDialog(order)}
+                      >
+                        {t("orders.markDeliveryFailed", "Delivery failed")}
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => setDetailOrderId(order.id)}>
                         {t("driverPortal.viewDetails", "View details")}
@@ -337,6 +405,69 @@ export function DriverOrders() {
               </Card>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={failureDialogOpen}
+        onOpenChange={(open) => {
+          setFailureDialogOpen(open);
+          if (!open) {
+            setFailureOrder(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md w-[95vw]">
+          <DialogHeader>
+            <DialogTitle>{t("orders.markDeliveryFailed", "Delivery failed")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            {failureOrder && (
+              <p className="text-muted-foreground">
+                {t("orders.code", "Code")} #{failureOrder.code || failureOrder.id}
+              </p>
+            )}
+            <div className="space-y-2">
+              <p className="text-muted-foreground">{t("orders.failureReason", "Failure reason")}</p>
+              <Select
+                value={failureReason}
+                onValueChange={(value) => setFailureReason(value as DeliveryFailureReason)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t("orders.failureReason", "Failure reason")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {FAILURE_REASONS.map((reason) => (
+                    <SelectItem key={reason} value={reason}>
+                      {t(`orders.failureReasons.${reason}`, reason)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <p className="text-muted-foreground">{t("orders.failureNote", "Notes (optional)")}</p>
+              <Textarea
+                rows={3}
+                placeholder={t("orders.failureNotePlaceholder", "Add context for ops")}
+                value={failureNote}
+                onChange={(event) => setFailureNote(event.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setFailureDialogOpen(false)}>
+                {t("common.cancel", "Cancel")}
+              </Button>
+              <Button
+                onClick={submitFailure}
+                disabled={!failureOrder || updatingOrderId === failureOrder?.id}
+              >
+                {updatingOrderId === failureOrder?.id
+                  ? t("common.saving", "Saving...")
+                  : t("orders.markDeliveryFailed", "Delivery failed")}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

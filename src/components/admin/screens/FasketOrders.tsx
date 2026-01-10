@@ -24,6 +24,7 @@ const STATUS_COLORS: Record<OrderStatus, Parameters<typeof FasketBadge>[0]["tone
   CONFIRMED: "info",
   PREPARING: "warning",
   OUT_FOR_DELIVERY: "info",
+  DELIVERY_FAILED: "warning",
   DELIVERED: "success",
   CANCELED: "danger",
 };
@@ -241,6 +242,7 @@ export function FasketOrders({ initialOrderId }: OrdersProps) {
                 <SelectItem value="CONFIRMED">{t("orders.statuses.CONFIRMED", "Confirmed")}</SelectItem>
                 <SelectItem value="PREPARING">{t("orders.statuses.PREPARING", "Preparing")}</SelectItem>
                 <SelectItem value="OUT_FOR_DELIVERY">{t("orders.statuses.OUT_FOR_DELIVERY", "Out for delivery")}</SelectItem>
+                <SelectItem value="DELIVERY_FAILED">{t("orders.statuses.DELIVERY_FAILED", "Delivery failed")}</SelectItem>
                 <SelectItem value="DELIVERED">{t("orders.statuses.DELIVERED", "Delivered")}</SelectItem>
                 <SelectItem value="CANCELED">{t("orders.statuses.CANCELED", "Canceled")}</SelectItem>
               </SelectContent>

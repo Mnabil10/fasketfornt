@@ -1,5 +1,5 @@
 import type { PaginatedQuery, PaginatedResponse } from "./common";
-import type { OrderStatus } from "./order";
+import type { DeliveryFailureReason, OrderStatus } from "./order";
 
 export type DriverOrderAddress = {
   label?: string | null;
@@ -30,6 +30,9 @@ export type DriverOrder = {
   code: string;
   status: OrderStatus;
   createdAt: string;
+  deliveryFailedAt?: string | null;
+  deliveryFailedReason?: DeliveryFailureReason | null;
+  deliveryFailedNote?: string | null;
   totalCents?: number | null;
   paymentMethod?: string | null;
   customer: DriverOrderCustomer;
@@ -45,5 +48,6 @@ export type DriverOrdersPaged = PaginatedResponse<DriverOrder>;
 
 export type DriverOrderStatusPayload = {
   to: OrderStatus;
+  reason?: DeliveryFailureReason;
   note?: string;
 };

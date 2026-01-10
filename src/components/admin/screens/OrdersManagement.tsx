@@ -12,7 +12,7 @@ import { Switch } from "../../ui/switch";
 import { AdminTableSkeleton } from "../common/AdminTableSkeleton";
 import { EmptyState } from "../common/EmptyState";
 import { ErrorState } from "../common/ErrorState";
-import { Search, Truck, Filter, RefreshCcw, Receipt, Clock, PhoneCall, MessageCircle, Shield, MapPin } from "lucide-react";
+import { Search, Truck, Filter, RefreshCcw, Receipt, Clock, PhoneCall, MessageCircle, Shield, MapPin, Layers, MessageSquare } from "lucide-react";
 import dayjs from "dayjs";
 import { toast } from "sonner";
 import { ORDERS_QUERY_KEY, useOrdersAdmin } from "../../../hooks/api/useOrdersAdmin";
@@ -27,15 +27,18 @@ import {
   getOrderDriverLocation,
   getOrderHistory,
   getOrderTransitions,
+  listOrders,
   updateOrderStatus,
   type OrderScope,
 } from "../../../services/orders.service";
 import { fetchAutomationEvents } from "../../../services/automation.service";
+import { fetchWhatsappLogs, formatWhatsappStatus, resendWhatsappLog } from "../../../services/whatsapp.service";
 import { getAdminErrorMessage } from "../../../lib/errors";
 import { usePermissions } from "../../../auth/permissions";
 import type { OrderDetail, OrderFilters, OrderStatus, OrderHistoryEntry, OrderTransition } from "../../../types/order";
 import { fmtCurrency } from "../../../lib/money";
 import { maskPhone } from "../../../lib/pii";
+import { redactPhoneNumbers, redactSensitiveText } from "../../../lib/redaction";
 import { useDebounce } from "../../../hooks/useDebounce";
 import { OrderReceiptView } from "./OrderReceiptView";
 import { collectAllowedTargets, isTransitionAllowed } from "../../../lib/order-transitions";
@@ -104,7 +107,7 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     const updated = order.updatedAt || order.createdAt;
     if (!updated) return false;
     const minutes = dayjs().diff(dayjs(updated), "minute");
-    return minutes >= 30 && !["DELIVERED", "CANCELED"].includes((order.status || "").toUpperCase());
+    return minutes >= 30 && !["DELIVERED", "CANCELED", "DELIVERY_FAILED"].includes((order.status || "").toUpperCase());
   };
 
   const visibleItems = useMemo(() => {
@@ -128,6 +131,19 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     queryFn: () => (selectedOrderId ? getOrder(selectedOrderId, orderScope) : null),
     enabled: Boolean(selectedOrderId),
   });
+
+  const orderGroupId = detailQuery.data?.orderGroupId ?? null;
+  const groupOrdersQuery = useQuery({
+    queryKey: [...ordersQueryKey, "group", orderGroupId],
+    queryFn: () => {
+      if (!orderGroupId) {
+        return Promise.resolve({ items: [], total: 0, page: 1, pageSize: 50 });
+      }
+      return listOrders({ orderGroupId, page: 1, pageSize: 50 }, orderScope);
+    },
+    enabled: detailOpen && Boolean(orderGroupId),
+  });
+  const groupOrders = groupOrdersQuery.data?.items || [];
 
   const transitionsQuery = useQuery({
     queryKey: [...ordersQueryKey, "transitions", selectedOrderId],
@@ -178,6 +194,28 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
   const automationUsedFallback =
     automationQuery.isSuccess && (automationQuery.data?.items?.length || 0) === 0 && (fallbackAutomationQuery.data?.items?.length || 0) > 0;
 
+  const whatsappOrderKey = detailQuery.data?.code || selectedOrderId || "";
+  const whatsappLogsQuery = useQuery({
+    queryKey: ["whatsapp-order-logs", whatsappOrderKey],
+    queryFn: () =>
+      fetchWhatsappLogs({
+        order: whatsappOrderKey || undefined,
+        page: 1,
+        pageSize: 25,
+      }),
+    enabled: detailOpen && perms.canViewSupport && Boolean(whatsappOrderKey),
+  });
+  const whatsappLogs = whatsappLogsQuery.data?.items || [];
+  const sortedWhatsappLogs = useMemo(
+    () => [...whatsappLogs].sort((a, b) => dayjs(b.createdAt).valueOf() - dayjs(a.createdAt).valueOf()),
+    [whatsappLogs]
+  );
+  const lastOutboundWhatsapp = sortedWhatsappLogs.find(
+    (log) => String(log.direction).toUpperCase() === "OUTBOUND"
+  );
+  const lastWhatsappStatusLabel =
+    formatWhatsappStatus(lastOutboundWhatsapp?.status) || lastOutboundWhatsapp?.status || t("common.not_available", "N/A");
+
   const assignDriverMutation = useAssignDriver(selectedOrderId || "");
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, to }: { id: string; to: OrderStatus }) => updateOrderStatus(id, { to }, orderScope),
@@ -193,6 +231,15 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
       queryClient.invalidateQueries({ queryKey: ordersQueryKey });
       queryClient.invalidateQueries({ queryKey: [...ordersQueryKey, "detail", selectedOrderId] });
     },
+  });
+
+  const resendWhatsappMutation = useMutation({
+    mutationFn: (logId: string) => resendWhatsappLog(logId),
+    onSuccess: () => {
+      toast.success(t("whatsapp.resend_success", "Resend triggered"));
+      whatsappLogsQuery.refetch();
+    },
+    onError: (error) => toast.error(getAdminErrorMessage(error, t, t("whatsapp.resend_failed", "Resend failed"))),
   });
 
   useEffect(() => {
@@ -228,7 +275,15 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
     overscan: 6,
   });
 
-  const baseStatuses: OrderStatus[] = ["PENDING", "CONFIRMED", "PREPARING", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELED"];
+  const baseStatuses: OrderStatus[] = [
+    "PENDING",
+    "CONFIRMED",
+    "PREPARING",
+    "OUT_FOR_DELIVERY",
+    "DELIVERY_FAILED",
+    "DELIVERED",
+    "CANCELED",
+  ];
   const statusFilterOptions = baseStatuses;
   const allowedTargets = useMemo(
     () => collectAllowedTargets(detailQuery.data?.allowedTransitions, transitionsQuery.data as OrderTransition[] | undefined),
@@ -263,10 +318,31 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
         color: "bg-purple-100 text-purple-800",
         label: t("orders.statuses.OUT_FOR_DELIVERY", "Out for delivery"),
       },
+      DELIVERY_FAILED: {
+        color: "bg-orange-100 text-orange-800",
+        label: t("orders.statuses.DELIVERY_FAILED", "Delivery failed"),
+      },
       DELIVERED: { color: "bg-green-100 text-green-800", label: t("orders.statuses.DELIVERED", "Delivered") },
       CANCELED: { color: "bg-red-100 text-red-800", label: t("orders.statuses.CANCELED", "Canceled") },
     };
     return map[status];
+  };
+
+  const whatsappStatusClass = (status?: string | null) => {
+    const key = String(status || "").toUpperCase();
+    const map: Record<string, string> = {
+      QUEUED: "bg-gray-100 text-gray-700",
+      SENT: "bg-blue-100 text-blue-800",
+      DELIVERED: "bg-emerald-100 text-emerald-800",
+      READ: "bg-green-100 text-green-800",
+      FAILED: "bg-red-100 text-red-800",
+    };
+    return map[key] || "bg-gray-100 text-gray-700";
+  };
+
+  const sanitizeWhatsappText = (value?: string | null) => {
+    const redacted = redactSensitiveText(value || "");
+    return perms.canViewPII ? redacted : redactPhoneNumbers(redacted);
   };
 
   const openDetail = (orderId: string) => {
@@ -664,6 +740,20 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                       <span>{t("orders.phone", "Phone")}</span>
                       <span>{perms.canViewPII ? detailQuery.data.customer?.phone : maskPhone(detailQuery.data.customer?.phone)}</span>
                     </div>
+                    {detailQuery.data.deliveryFailedReason && (
+                      <div className="flex justify-between">
+                        <span>{t("orders.failureReason", "Failure reason")}</span>
+                        <span className="font-semibold">
+                          {t(`orders.failureReasons.${detailQuery.data.deliveryFailedReason}`, detailQuery.data.deliveryFailedReason)}
+                        </span>
+                      </div>
+                    )}
+                    {detailQuery.data.deliveryFailedNote && (
+                      <div className="flex justify-between">
+                        <span>{t("orders.failureNote", "Notes")}</span>
+                        <span className="font-semibold">{detailQuery.data.deliveryFailedNote}</span>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -837,6 +927,82 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                   </Card>
                 )}
 
+                {perms.canViewSupport && (
+                  <Card>
+                    <CardHeader className="flex items-center justify-between">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4" />
+                        {t("whatsapp.order_title", "WhatsApp")}
+                      </CardTitle>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!lastOutboundWhatsapp?.canResend || resendWhatsappMutation.isPending}
+                        onClick={() => {
+                          if (lastOutboundWhatsapp?.id && lastOutboundWhatsapp.canResend) {
+                            resendWhatsappMutation.mutate(lastOutboundWhatsapp.id);
+                          }
+                        }}
+                        title={!lastOutboundWhatsapp?.canResend ? t("whatsapp.resend_unavailable", "Resend not available") : undefined}
+                      >
+                        {resendWhatsappMutation.isPending ? t("common.saving", "Saving...") : t("whatsapp.resend", "Resend last")}
+                      </Button>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {whatsappLogsQuery.isLoading ? (
+                        <AdminTableSkeleton rows={2} columns={2} />
+                      ) : whatsappLogsQuery.isError ? (
+                        <ErrorState
+                          message={getAdminErrorMessage(whatsappLogsQuery.error, t, t("whatsapp.logs_error", "Failed to load WhatsApp logs"))}
+                          onRetry={() => whatsappLogsQuery.refetch()}
+                        />
+                      ) : !sortedWhatsappLogs.length ? (
+                        <p className="text-sm text-muted-foreground">{t("whatsapp.order_empty", "No WhatsApp logs for this order.")}</p>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span>{t("whatsapp.last_status", "Last status sent")}</span>
+                            <Badge variant="outline" className={whatsappStatusClass(lastOutboundWhatsapp?.status)}>
+                              {lastWhatsappStatusLabel}
+                            </Badge>
+                          </div>
+                          <div className="space-y-2">
+                            {sortedWhatsappLogs.slice(0, 3).map((log) => {
+                              const statusLabel = formatWhatsappStatus(log.status) || log.status;
+                              const statusKey = String(log.status || "QUEUED");
+                              return (
+                                <div key={log.id} className="flex items-start justify-between gap-3 border-b last:border-0 pb-2">
+                                  <div>
+                                    <p className="font-medium text-sm">
+                                      {log.templateName || log.messageType || t("whatsapp.message", "Message")}
+                                    </p>
+                                    {log.body && (
+                                      <p className="text-xs text-muted-foreground line-clamp-2">
+                                        {sanitizeWhatsappText(log.body)}
+                                      </p>
+                                    )}
+                                    <p className="text-xs text-muted-foreground">
+                                      {dayjs(log.createdAt).format("DD MMM HH:mm")}
+                                    </p>
+                                  </div>
+                                  <Badge variant="outline" className={whatsappStatusClass(statusKey)}>
+                                    {statusLabel}
+                                  </Badge>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {!lastOutboundWhatsapp?.canResend && (
+                            <p className="text-xs text-muted-foreground">
+                              {t("whatsapp.resend_unavailable", "Resend not available for the latest message.")}
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-sm flex items-center gap-2">
@@ -883,6 +1049,47 @@ export function OrdersManagement({ initialOrderId }: OrdersManagementProps) {
                     )}
                   </CardContent>
                 </Card>
+
+                {orderGroupId && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Layers className="w-4 h-4" />
+                        {t("orders.groupId", "Group")}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>{t("orders.groupId", "Group")}</span>
+                        <span className="font-semibold">#{orderGroupId}</span>
+                      </div>
+                      {groupOrdersQuery.isLoading ? (
+                        <p className="text-muted-foreground">{t("common.loading", "Loading...")}</p>
+                      ) : groupOrdersQuery.isError ? (
+                        <ErrorState message={getAdminErrorMessage(groupOrdersQuery.error, t)} onRetry={() => groupOrdersQuery.refetch()} />
+                      ) : groupOrders.length ? (
+                        <div className="space-y-2">
+                          {groupOrders.map((order) => {
+                            const meta = statusBadge(order.status);
+                            return (
+                              <div key={order.id} className="flex items-center justify-between border-b last:border-0 pb-2 last:pb-0">
+                                <div>
+                                  <p className="font-medium text-sm">#{order.code || order.id}</p>
+                                  <p className="text-xs text-muted-foreground">{meta?.label ?? order.status}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-xs text-muted-foreground">{fmtCurrency(order.totalCents, order.currency || "EGP")}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground">{t("orders.empty", "No orders found")}</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

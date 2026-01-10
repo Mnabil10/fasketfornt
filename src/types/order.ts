@@ -7,9 +7,16 @@ export type OrderStatus =
   | "CONFIRMED"
   | "PREPARING"
   | "OUT_FOR_DELIVERY"
+  | "DELIVERY_FAILED"
   | "DELIVERED"
   | "CANCELED"
   | (string & {});
+
+export type DeliveryFailureReason =
+  | "NO_ANSWER"
+  | "WRONG_ADDRESS"
+  | "UNSAFE_LOCATION"
+  | "CUSTOMER_REQUESTED_RESCHEDULE";
 
 export type OrderCustomer = {
   id: string;
@@ -46,10 +53,14 @@ export type OrderItem = {
 export type Order = {
   id: string;
   code: string;
+  orderGroupId?: string | null;
   totalCents: number;
   status: OrderStatus;
   createdAt: string;
   updatedAt?: string;
+  deliveryFailedAt?: string | null;
+  deliveryFailedReason?: DeliveryFailureReason | null;
+  deliveryFailedNote?: string | null;
   customer: OrderCustomer;
   driver?: DeliveryDriver | null;
   deliveryZone?: DeliveryZone | null;
@@ -88,6 +99,7 @@ export type OrderFilters = PaginatedQuery & {
   driverId?: string;
   hasDriver?: boolean;
   providerId?: string;
+  orderGroupId?: string;
 };
 
 export type OrderStatusPayload = {

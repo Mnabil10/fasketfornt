@@ -1,6 +1,11 @@
 import { api } from "../lib/api";
 import { buildQueryParams } from "../lib/query";
-import type { DriverOrder, DriverOrderFilters, DriverOrdersPaged, DriverOrderStatusPayload } from "../types/driver-orders";
+import type {
+  DriverOrder,
+  DriverOrderFilters,
+  DriverOrdersPaged,
+  DriverOrderStatusPayload,
+} from "../types/driver-orders";
 
 const BASE = "/api/v1/driver/orders";
 
@@ -25,12 +30,23 @@ export async function completeDriverDelivery(id: string, payload?: { note?: stri
   return data;
 }
 
+export async function failDriverDelivery(id: string, payload: { reason: string; note?: string }) {
+  const { data } = await api.post(`${BASE}/${id}/fail`, payload);
+  return data;
+}
+
 export async function updateDriverOrderStatus(id: string, payload: DriverOrderStatusPayload) {
   if (payload.to === "OUT_FOR_DELIVERY") {
     return startDriverDelivery(id, { note: payload.note });
   }
   if (payload.to === "DELIVERED") {
     return completeDriverDelivery(id, { note: payload.note });
+  }
+  if (payload.to === "DELIVERY_FAILED") {
+    if (!payload.reason) {
+      throw new Error("Delivery failure reason is required");
+    }
+    return failDriverDelivery(id, { reason: payload.reason, note: payload.note });
   }
   const { data } = await api.patch(`${BASE}/${id}/status`, payload);
   return data;
